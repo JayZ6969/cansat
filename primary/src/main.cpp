@@ -338,8 +338,9 @@ bool readBMP280() {
 
 void readBattery() {
   int adcValue = analogRead(BATTERY_ADC_PIN);
-  // Convert ADC to voltage (assuming 3.3V reference and voltage divider)
-  primaryData.voltage = (adcValue / 4095.0) * 3.3 * 2.0; // Assuming 2:1 voltage divider
+  // Convert ADC to voltage for 18650 x 2 with 3:1 voltage divider (100k:47k)
+  // ADC reading * (3.3V / 4095) * voltage_divider_ratio
+  primaryData.voltage = (adcValue / 4095.0) * 3.3 * 3.14; // 3.14 = (100k+47k)/47k
 }
 
 // ==================== UART COMMUNICATION ====================
