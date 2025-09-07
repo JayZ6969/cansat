@@ -32,7 +32,7 @@
 #define LED_GREEN_PIN   14
 
 // Buzzer
-#define BUZZER_PIN      0   // Boot pin
+#define BUZZER_PIN      2   // Boot pin
 
 // SPI SD Card
 #define SD_CS_PIN       5
@@ -120,6 +120,18 @@ bool greenLedState = false;
 bool buzzerState = false;
 unsigned long greenBlinkStart = 0;
 unsigned long buzzerBeaconStart = 0;
+unsigned long buzzerPatternStart = 0;
+int buzzerBeepCount = 0;
+int buzzerTargetBeeps = 0;
+
+// Buzzer patterns for different states
+enum BuzzerPattern {
+  BUZZER_OFF = 0,
+  BUZZER_BOOT = 1,          // 3 short beeps at startup
+  BUZZER_STATUS_CHECK = 2,  // Status indication after boot (GPS/Sensors)
+  BUZZER_RECOVERY = 3       // Long beeps for recovery after landing
+};
+BuzzerPattern currentBuzzerPattern = BUZZER_OFF;
 
 // Data collection intervals
 const unsigned long DATA_INTERVAL = 1000;        // 1Hz data collection
@@ -127,12 +139,47 @@ const unsigned long UART_INTERVAL = 800;         // UART request every 800ms
 const unsigned long STATE_UPDATE_INTERVAL = 500; // State check every 500ms
 const unsigned long GREEN_BLINK_DURATION = 100;  // 100ms blink
 const unsigned long BUZZER_BEACON_INTERVAL = 2000; // 2s beacon interval
+const unsigned long BUZZER_STATUS_TIMEOUT = 15000; // 15s after boot for status check
+const unsigned long BUZZER_PATTERN_INTERVAL = 3000; // 3s between pattern repeats
 
 // Flight logic variables
 float maxAltitude = 0.0;
 bool apogeeReached = false;
 float currentAltitude = 0.0;
 unsigned long ascentStartTime = 0;
+
+// ==================== INITIALIZATION FUNCTIONS ====================
+
+void initializePins();
+bool initializeI2C();
+bool initializeSD();
+void initializeUART();
+
+// ==================== SENSOR READING FUNCTIONS ====================
+void readGPS();
+bool readMPU6050();
+bool readBMP280();
+void readBattery();
+
+// ==================== UART COMMUNICATION ====================
+bool requestSecondaryData();
+void sendConsolidatedData(String csvRow);
+
+// ==================== DATA MANAGEMENT ====================
+String createCSVRow();
+bool writeToSD(String csvRow);
+
+// ==================== FLIGHT STATE MANAGEMENT ====================
+void updateFlightState();
+
+// ==================== LED AND BUZZER CONTROL ====================
+void updateLEDs();
+void updateBuzzer();
+void triggerGreenBlink();
+void executeBuzzerBeeps(unsigned long beepDuration, unsigned long gapDuration);
+
+// ==================== SYSTEM STATUS CHECK ====================
+void checkSystemStatus();
 
 // ==================== INITIALIZATION FUNCTIONS ====================
 
@@ -149,7 +196,7 @@ void initializePins() {
   digitalWrite(LED_RED_PIN, HIGH);
   digitalWrite(LED_YELLOW_PIN, LOW);
   digitalWrite(LED_GREEN_PIN, LOW);
-  digitalWrite(BUZZER_PIN, HIGH); // Buzzer mirrors RED during boot
+  digitalWrite(BUZZER_PIN, LOW); // Buzzer starts OFF, will beep according to pattern
   
   Serial.println("Pins initialized");
 }
@@ -498,33 +545,113 @@ void updateLEDs() {
 }
 
 void updateBuzzer() {
-  bool buzzerShouldBeOn = false;
+  // Determine which pattern should be active
+  BuzzerPattern targetPattern = BUZZER_OFF;
+  unsigned long timeSinceStart = millis() - missionStartTime;
   
-  // Mirror LED states
   if (currentState == BOOT) {
-    buzzerShouldBeOn = true;
-  } else if (!gpsLocked) {
-    buzzerShouldBeOn = true;
-  } else if (sensorsOK) {
-    // Beacon pattern when below 50m after apogee
-    if (apogeeReached && currentAltitude < 50) {
-      unsigned long now = millis();
-      if (buzzerBeaconStart == 0) {
-        buzzerBeaconStart = now;
-      }
-      
-      unsigned long elapsed = now - buzzerBeaconStart;
-      if (elapsed < 500) { // 500ms on
-        buzzerShouldBeOn = true;
-      } else if (elapsed < BUZZER_BEACON_INTERVAL) { // 1500ms off
-        buzzerShouldBeOn = false;
-      } else {
-        buzzerBeaconStart = now; // Reset cycle
-      }
-    }
+    targetPattern = BUZZER_BOOT;
+  } else if (timeSinceStart < BUZZER_STATUS_TIMEOUT && (currentState == TEST_MODE)) {
+    // Status indication period - only in TEST_MODE for first 15 seconds
+    targetPattern = BUZZER_STATUS_CHECK;
+  } else if (apogeeReached && currentAltitude < 50 && 
+             (currentState == DESCENT || currentState == AEROBRAKE_RELEASE || currentState == IMPACT)) {
+    // Recovery mode - only after flight stages are complete and low altitude
+    targetPattern = BUZZER_RECOVERY;
   }
   
-  digitalWrite(BUZZER_PIN, buzzerShouldBeOn ? HIGH : LOW);
+  // If pattern changed, reset timing
+  if (targetPattern != currentBuzzerPattern) {
+    currentBuzzerPattern = targetPattern;
+    buzzerPatternStart = millis();
+    buzzerBeepCount = 0;
+    buzzerTargetBeeps = 0;
+    digitalWrite(BUZZER_PIN, LOW);
+  }
+  
+  // Execute current pattern
+  unsigned long now = millis();
+  unsigned long patternElapsed = now - buzzerPatternStart;
+  
+  switch (currentBuzzerPattern) {
+    case BUZZER_OFF:
+      digitalWrite(BUZZER_PIN, LOW);
+      break;
+      
+    case BUZZER_BOOT:
+      // 3 short beeps at startup
+      if (buzzerTargetBeeps == 0) {
+        buzzerTargetBeeps = 3;
+      }
+      executeBuzzerBeeps(150, 200); // 150ms on, 200ms off
+      break;
+      
+    case BUZZER_STATUS_CHECK:
+      // Different patterns based on system status
+      if (buzzerTargetBeeps == 0) {
+        if (sensorsOK && gpsLocked) {
+          // 1 long beep - all systems OK
+          buzzerTargetBeeps = 1;
+          executeBuzzerBeeps(800, 0); // 800ms long beep
+        } else if (sensorsOK && !gpsLocked) {
+          // 2 medium beeps - sensors OK, GPS not locked
+          buzzerTargetBeeps = 2;
+          executeBuzzerBeeps(300, 400); // 300ms on, 400ms off
+        } else {
+          // 3 short beeps - sensor issues
+          buzzerTargetBeeps = 3;
+          executeBuzzerBeeps(150, 200); // 150ms on, 200ms off
+        }
+      } else {
+        // Execute the determined pattern
+        if (sensorsOK && gpsLocked) {
+          executeBuzzerBeeps(800, 0);
+        } else if (sensorsOK && !gpsLocked) {
+          executeBuzzerBeeps(300, 400);
+        } else {
+          executeBuzzerBeeps(150, 200);
+        }
+      }
+      break;
+      
+    case BUZZER_RECOVERY:
+      // 1 long beep every 3 seconds for recovery
+      if (patternElapsed < 1000) { // 1000ms long beep
+        digitalWrite(BUZZER_PIN, HIGH);
+      } else if (patternElapsed >= BUZZER_PATTERN_INTERVAL) {
+        // Reset pattern every 3 seconds
+        buzzerPatternStart = now;
+      } else {
+        digitalWrite(BUZZER_PIN, LOW);
+      }
+      break;
+  }
+}
+
+void executeBuzzerBeeps(unsigned long beepDuration, unsigned long gapDuration) {
+  unsigned long now = millis();
+  unsigned long patternElapsed = now - buzzerPatternStart;
+  
+  if (buzzerBeepCount < buzzerTargetBeeps) {
+    unsigned long beepCycleTime = beepDuration + gapDuration;
+    unsigned long currentBeepStart = buzzerBeepCount * beepCycleTime;
+    
+    if (patternElapsed >= currentBeepStart && patternElapsed < (currentBeepStart + beepDuration)) {
+      // Beep ON phase
+      digitalWrite(BUZZER_PIN, HIGH);
+    } else if (patternElapsed >= (currentBeepStart + beepDuration) && patternElapsed < (currentBeepStart + beepCycleTime)) {
+      // Beep OFF phase
+      digitalWrite(BUZZER_PIN, LOW);
+    }
+    
+    // Check if current beep cycle is complete
+    if (patternElapsed >= (currentBeepStart + beepCycleTime)) {
+      buzzerBeepCount++;
+    }
+  } else {
+    // All beeps completed
+    digitalWrite(BUZZER_PIN, LOW);
+  }
 }
 
 void triggerGreenBlink() {
@@ -634,6 +761,7 @@ void loop() {
                    ", GREEN: " + String(sensorsOK ? "ON" : "OFF"));
     Serial.println("GPS Locked: " + String(gpsLocked) + ", Sensors OK: " + String(sensorsOK));
     Serial.println("GPS Sats: " + String(primaryData.gnssSats) + ", GPS Age: " + String(gps.location.age()));
+    Serial.println("Buzzer Pattern: " + String(currentBuzzerPattern) + ", Beep Count: " + String(buzzerBeepCount));
     Serial.println("---");
   }
   
