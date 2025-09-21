@@ -183,12 +183,16 @@ bool apogeeReached = false;
 float currentAltitude = 0.0;
 unsigned long ascentStartTime = 0;
 
+// BMP280 baseline calibration
+float baselineAltitudeBMP280 = 0.0;
+
 // ==================== INITIALIZATION FUNCTIONS ====================
 
 void initializePins();
 bool initializeI2C();
 bool initializeSD();
 void initializeUART();
+void calibrateBaselineBMP280();
 
 // ==================== SENSOR READING FUNCTIONS ====================
 void readGPS();
@@ -328,6 +332,37 @@ void initializeUART()
   Serial.println("UART initialized");
 }
 
+void calibrateBaselineBMP280()
+{
+  Serial.println("Calibrating BMP280 baseline altitude...");
+  float altSum = 0;
+  int validReadings = 0;
+
+  // Take 50 readings over 2.5 seconds at startup
+  for (int i = 0; i < 50; i++)
+  {
+    float alt = bmp280.readAltitude(1013.25);
+    if (!isnan(alt))
+    {
+      altSum += alt;
+      validReadings++;
+    }
+    delay(50);
+  }
+
+  if (validReadings > 0)
+  {
+    baselineAltitudeBMP280 = altSum / validReadings;
+    Serial.print("BMP280 baseline altitude set to: ");
+    Serial.println(baselineAltitudeBMP280);
+  }
+  else
+  {
+    Serial.println("Failed to calibrate BMP280 baseline - no valid readings");
+    baselineAltitudeBMP280 = 0.0;
+  }
+}
+
 // ==================== SENSOR READING FUNCTIONS ====================
 
 void readGPS()
@@ -400,8 +435,8 @@ bool readMPU6050()
 bool readBMP280()
 {
   primaryData.temperature = bmp280.readTemperature();
-  primaryData.pressure = bmp280.readPressure() / 100.0; // Convert to hPa
-  primaryData.altitude = bmp280.readAltitude(1013.25);  // Sea level pressure
+  primaryData.pressure = bmp280.readPressure() / 100.0;                         // Convert to hPa
+  primaryData.altitude = bmp280.readAltitude(1013.25) - baselineAltitudeBMP280; // Zero-referenced altitude
 
   return (!isnan(primaryData.temperature) && !isnan(primaryData.pressure));
 }
@@ -710,12 +745,12 @@ void updateBuzzer()
     break;
 
   case BUZZER_BOOT:
-    // 3 short beeps at startup
+    // 3 beeps at startup
     if (buzzerTargetBeeps == 0)
     {
       buzzerTargetBeeps = 3;
     }
-    executeBuzzerBeeps(150, 200); // 150ms on, 200ms off
+    executeBuzzerBeeps(1000, 1000); // 1s on, 1s off
     break;
 
   case BUZZER_STATUS_CHECK:
@@ -724,39 +759,21 @@ void updateBuzzer()
     {
       if (sensorsOK && gpsLocked)
       {
-        // 1 long beep - all systems OK
+        // 1 beep - all systems OK
         buzzerTargetBeeps = 1;
-        executeBuzzerBeeps(800, 0); // 800ms long beep
       }
       else if (sensorsOK && !gpsLocked)
       {
-        // 2 medium beeps - sensors OK, GPS not locked
+        // 2 beeps - sensors OK, GPS not locked
         buzzerTargetBeeps = 2;
-        executeBuzzerBeeps(300, 400); // 300ms on, 400ms off
       }
       else
       {
-        // 3 short beeps - sensor issues
+        // 3 beeps - sensor issues
         buzzerTargetBeeps = 3;
-        executeBuzzerBeeps(150, 200); // 150ms on, 200ms off
       }
     }
-    else
-    {
-      // Execute the determined pattern
-      if (sensorsOK && gpsLocked)
-      {
-        executeBuzzerBeeps(800, 0);
-      }
-      else if (sensorsOK && !gpsLocked)
-      {
-        executeBuzzerBeeps(300, 400);
-      }
-      else
-      {
-        executeBuzzerBeeps(150, 200);
-      }
-    }
+    executeBuzzerBeeps(1000, 1000); // 1s on, 1s off for all conditions
     break;
 
   case BUZZER_RECOVERY:
@@ -946,6 +963,12 @@ void setup()
 
   bool i2cOK = initializeI2C();
   sdCardOK = initializeSD();
+
+  // Calibrate BMP280 baseline if I2C is working
+  if (i2cOK)
+  {
+    calibrateBaselineBMP280();
+  }
 
   // Initial sensor readings
   readBattery();
