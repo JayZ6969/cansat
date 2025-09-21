@@ -574,13 +574,13 @@ String createCSVRow()
   // Separate columns for servo status and PID speed
   String servoStatus = "";
   String pidSpeed = "";
-  
+
   if (secondaryData.dataValid)
   {
     servoStatus = secondaryData.servoStatus;
     pidSpeed = secondaryData.pidOutput;
   }
-  
+
   csvRow += servoStatus + ",";
   csvRow += pidSpeed + ",";
 
