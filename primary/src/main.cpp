@@ -176,6 +176,7 @@ const unsigned long GREEN_BLINK_DURATION = 100;     // 100ms blink
 const unsigned long BUZZER_BEACON_INTERVAL = 2000;  // 2s beacon interval
 const unsigned long BUZZER_STATUS_TIMEOUT = 15000;  // 15s after boot for status check
 const unsigned long BUZZER_PATTERN_INTERVAL = 3000; // 3s between pattern repeats
+const unsigned long BUZZER_MODE_DELAY = 3000;       // 3s delay between buzzer modes
 
 // Flight logic variables
 float maxAltitude = 0.0;
@@ -306,7 +307,7 @@ bool initializeSD()
     File file = SD.open("/telemetry.csv", FILE_WRITE);
     if (file)
     {
-      file.println("TEAM_ID,TIMESTAMP,PACKET_COUNT,ALTITUDE,PRESSURE,TEMP,VOLTAGE,GNSS_TIME,GNSS_LAT,GNSS_LONG,GNSS_ALT,GNSS_SATS,ACCEL_X,ACCEL_Y,ACCEL_Z,GYRO_X,GYRO_Y,GYRO_Z,GYRO_SPIN_RATE,FLIGHT_STATE,OPTIONAL_DATA,ERROR_CODE");
+      file.println("TEAM_ID,TIMESTAMP,PACKET_COUNT,ALTITUDE,PRESSURE,TEMP,VOLTAGE,GNSS_TIME,GNSS_LAT,GNSS_LONG,GNSS_ALT,GNSS_SATS,ACCEL_X,ACCEL_Y,ACCEL_Z,GYRO_X,GYRO_Y,GYRO_Z,GYRO_SPIN_RATE,FLIGHT_STATE,SERVO_STATUS,PID_SPEED,ERROR_CODE");
       file.close();
       Serial.println("CSV header created");
     }
@@ -570,15 +571,20 @@ String createCSVRow()
   csvRow += String(primaryData.gyroSpinRate, 3) + ",";
   csvRow += String(currentState) + ",";
 
-  // Optional data includes secondary status
-  String optional = "";
+  // Separate columns for servo status and PID speed
+  String servoStatus = "";
+  String pidSpeed = "";
+  
   if (secondaryData.dataValid)
   {
-    optional += "SERVO:" + secondaryData.servoStatus + ";PID:" + secondaryData.pidOutput;
+    servoStatus = secondaryData.servoStatus;
+    pidSpeed = secondaryData.pidOutput;
   }
-  csvRow += optional + ",";
+  
+  csvRow += servoStatus + ",";
+  csvRow += pidSpeed + ",";
 
-  // Add ErrorCode as 22nd column
+  // Add ErrorCode as 23rd column (now one column later)
   csvRow += generateErrorCode();
 
   return csvRow;
@@ -712,9 +718,11 @@ void updateBuzzer()
   {
     targetPattern = BUZZER_BOOT;
   }
-  else if (timeSinceStart < BUZZER_STATUS_TIMEOUT && (currentState == TEST_MODE))
+  else if (timeSinceStart > BUZZER_MODE_DELAY &&
+           timeSinceStart < (BUZZER_STATUS_TIMEOUT + BUZZER_MODE_DELAY) &&
+           (currentState == TEST_MODE))
   {
-    // Status indication period - only in TEST_MODE for first 15 seconds
+    // Status indication period - only in TEST_MODE after delay and within timeout
     targetPattern = BUZZER_STATUS_CHECK;
   }
   else if (apogeeReached && currentAltitude < 50 &&
