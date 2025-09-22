@@ -53,7 +53,10 @@
 #define SENSOR_READ_INTERVAL 500  // Read sensors every 500ms
 #define PRIMARY_DATA_TIMEOUT 5000 // Consider Primary lost after 5 seconds
 #define LORA_TX_TIMEOUT 2000      // LoRa transmission timeout
-#define LED_BLINK_INTERVAL 500    // LED blink period
+
+// LED Timing Constants (matching Primary ESP32 timing logic)
+const unsigned long LED_D2_BLINK_DURATION = 100;    // 100ms blink duration
+const unsigned long LED_D13_BLINK_DURATION = 100;   // 100ms blink duration
 
 // Global Objects
 Adafruit_BMP3XX bmp390;
@@ -84,8 +87,9 @@ bool bmp390Error = false; // BMP390 sensor error
 bool loraError = false;   // LoRa transmission error
 bool pidError = false;    // PID control error
 
-// LED Blinking State (Non-blocking)
-unsigned long lastLedBlink = 0;
+// LED Timing State Variables (matching Primary ESP32 timing logic)
+unsigned long ledD2BlinkStart = 0;
+unsigned long ledD13BlinkStart = 0;
 bool ledBlinkState = false;
 
 // Function Declarations
@@ -387,50 +391,99 @@ void transmitViaLoRa(String csvData)
 
 void updateLEDs()
 {
-    // D2 LED Logic:
+    // D2 LED Logic (matching Primary ESP32 timing logic):
     // - ON during sensor initialization (handled in setup())
-    // - BLINK when receiving data from Primary
+    // - BLINK when receiving data from Primary (25ms ON, 75ms OFF pattern)
 
     if (primaryDataReceived)
     {
-        // Blink D2 when receiving data from Primary
-        if (millis() - lastLedBlink >= LED_BLINK_INTERVAL)
+        // D2 LED blinks with same pattern as Primary's Green LED when receiving data
+        if (ledD2BlinkStart == 0)
         {
-            ledBlinkState = !ledBlinkState;
-            digitalWrite(LED_D2, ledBlinkState);
-            lastLedBlink = millis();
+            ledD2BlinkStart = millis();
+        }
+        
+        unsigned long d2Elapsed = millis() - ledD2BlinkStart;
+        
+        if (d2Elapsed < LED_D2_BLINK_DURATION)
+        {
+            // Blinking - ON for 25ms, OFF for 75ms within the 100ms blink period
+            if (d2Elapsed < 25)
+            {
+                digitalWrite(LED_D2, HIGH);
+            }
+            else
+            {
+                digitalWrite(LED_D2, LOW);
+            }
+        }
+        else if (d2Elapsed >= 1000)  // Repeat every 1 second when receiving data
+        {
+            // Start new blink cycle
+            ledD2BlinkStart = millis();
+        }
+        else
+        {
+            // Wait period - LED stays off
+            digitalWrite(LED_D2, LOW);
         }
     }
     else
     {
-        // Turn OFF D2 when not receiving data
+        // Turn OFF D2 when not receiving data and reset timing
         digitalWrite(LED_D2, LOW);
+        ledD2BlinkStart = 0;
     }
 
-    // D13 LED Logic:
-    // - ON if LoRa transmission fails
-    // - BLINK if not receiving data from Primary
+    // D13 LED Logic (matching Primary ESP32 timing logic):
+    // - ON if LoRa transmission fails (solid)
+    // - BLINK if not receiving data from Primary (50ms ON, 50ms OFF pattern)
     // - OFF otherwise
 
     if (loraTransmissionFailed)
     {
         // Solid ON if LoRa transmission failed
         digitalWrite(LED_D13, HIGH);
+        ledD13BlinkStart = 0; // Reset blink timing
     }
     else if (millis() - lastPrimaryData > PRIMARY_DATA_TIMEOUT)
     {
-        // Blink if not receiving data from Primary
-        if (millis() - lastLedBlink >= LED_BLINK_INTERVAL)
+        // D13 LED blinks with same pattern as Primary's Yellow LED when no Primary data
+        if (ledD13BlinkStart == 0)
         {
-            ledBlinkState = !ledBlinkState;
-            digitalWrite(LED_D13, ledBlinkState);
-            lastLedBlink = millis();
+            ledD13BlinkStart = millis();
+        }
+        
+        unsigned long d13Elapsed = millis() - ledD13BlinkStart;
+        
+        if (d13Elapsed < LED_D13_BLINK_DURATION)
+        {
+            // ON for first half of duration (50ms ON, 50ms OFF)
+            if (d13Elapsed < LED_D13_BLINK_DURATION / 2)
+            {
+                digitalWrite(LED_D13, HIGH);
+            }
+            else
+            {
+                digitalWrite(LED_D13, LOW);
+            }
+        }
+        else if (d13Elapsed >= 1500)  // Repeat every 1.5 seconds (same as Primary Yellow)
+        {
+            // Start new blink cycle
+            ledD13BlinkStart = millis();
+        }
+        else
+        {
+            // Wait period - LED stays off
+            digitalWrite(LED_D13, LOW);
         }
     }
     else
     {
-        // Turn OFF D13 in normal operation
+        // Turn OFF D13 in normal operation and reset timing
         digitalWrite(LED_D13, LOW);
+        ledD13BlinkStart = 0;
         loraTransmissionFailed = false; // Reset transmission failure flag
     }
 

@@ -32,7 +32,7 @@
 #define LED_GREEN_PIN 14
 
 // Buzzer
-#define BUZZER_PIN 2 // Boot pin
+#define BUZZER_PIN      2   // GPIO2
 
 // ==================== ERROR CODE DEFINITIONS ====================
 // Subsystem IDs for error tracking
@@ -153,6 +153,7 @@ unsigned long lastStateUpdate = 0;
 bool greenLedState = false;
 bool buzzerState = false;
 unsigned long greenBlinkStart = 0;
+unsigned long yellowBlinkStart = 0;
 unsigned long buzzerBeaconStart = 0;
 unsigned long buzzerPatternStart = 0;
 int buzzerBeepCount = 0;
@@ -163,7 +164,7 @@ enum BuzzerPattern
 {
   BUZZER_OFF = 0,
   BUZZER_BOOT = 1,         // 3 short beeps at startup
-  BUZZER_STATUS_CHECK = 2, // Status indication after boot (GPS/Sensors)
+  BUZZER_STATUS = 2,       // Status indication (1-3 beeps based on system health)
   BUZZER_RECOVERY = 3      // Long beeps for recovery after landing
 };
 BuzzerPattern currentBuzzerPattern = BUZZER_OFF;
@@ -172,11 +173,14 @@ BuzzerPattern currentBuzzerPattern = BUZZER_OFF;
 const unsigned long DATA_INTERVAL = 1000;           // 1Hz data collection
 const unsigned long UART_INTERVAL = 800;            // UART request every 800ms
 const unsigned long STATE_UPDATE_INTERVAL = 500;    // State check every 500ms
-const unsigned long GREEN_BLINK_DURATION = 100;     // 100ms blink
-const unsigned long BUZZER_BEACON_INTERVAL = 2000;  // 2s beacon interval
-const unsigned long BUZZER_STATUS_TIMEOUT = 15000;  // 15s after boot for status check
-const unsigned long BUZZER_PATTERN_INTERVAL = 3000; // 3s between pattern repeats
-const unsigned long BUZZER_MODE_DELAY = 3000;       // 3s delay between buzzer modes
+const unsigned long GREEN_BLINK_DURATION = 100;     // 100ms blink duration
+const unsigned long YELLOW_BLINK_DURATION = 100;    // 100ms blink duration
+
+// Buzzer timing - short and simple
+const unsigned long BUZZER_BEEP_SHORT = 150;        // 150ms short beep
+const unsigned long BUZZER_BEEP_LONG = 500;         // 500ms long beep
+const unsigned long BUZZER_GAP_SHORT = 200;         // 200ms gap between beeps
+const unsigned long BUZZER_RECOVERY_INTERVAL = 3000; // 3s between recovery beeps
 
 // Flight logic variables
 float maxAltitude = 0.0;
@@ -686,26 +690,101 @@ void updateFlightState()
 
 void updateLEDs()
 {
-  // RED LED (D12) - ON during BOOT state only
-  digitalWrite(LED_RED_PIN, (currentState == BOOT) ? HIGH : LOW);
-
-  // YELLOW LED (D13) - ON while GPS not locked
-  digitalWrite(LED_YELLOW_PIN, !gpsLocked ? HIGH : LOW);
-
-  // GREEN LED (D14) - ON when all sensors OK, BLINK during data operations
-  if (greenBlinkStart > 0 && (millis() - greenBlinkStart) < GREEN_BLINK_DURATION)
+  // LED Priority Logic - Only one LED can be active at a time
+  
+  // Priority 1: RED LED during BOOT state only
+  if (currentState == BOOT)
   {
-    // Blinking during data operations (50ms ON, 50ms OFF pattern)
-    unsigned long blinkElapsed = millis() - greenBlinkStart;
-    bool blinkState = (blinkElapsed / 50) % 2 == 0; // Toggle every 50ms
-    digitalWrite(LED_GREEN_PIN, blinkState ? HIGH : LOW);
+    digitalWrite(LED_RED_PIN, HIGH);
+    digitalWrite(LED_YELLOW_PIN, LOW);
+    digitalWrite(LED_GREEN_PIN, LOW);
+    return;
   }
-  else
+
+  // All other states: RED LED is OFF
+  digitalWrite(LED_RED_PIN, LOW);
+
+  // Priority 2: GREEN LED when everything is OK and GPS is locked
+  if (sensorsOK && gpsLocked)
   {
-    // Steady state - ON when all sensors are OK
-    greenBlinkStart = 0;
-    digitalWrite(LED_GREEN_PIN, sensorsOK ? HIGH : LOW);
+    // GREEN LED blinks once every 2 seconds when all systems are good
+    if (greenBlinkStart == 0)
+    {
+      greenBlinkStart = millis();
+    }
+    
+    unsigned long greenElapsed = millis() - greenBlinkStart;
+    
+    if (greenElapsed < GREEN_BLINK_DURATION)
+    {
+      // Blinking - ON for 25ms, OFF for 75ms within the 100ms blink period
+      if (greenElapsed < 25)
+      {
+        digitalWrite(LED_GREEN_PIN, HIGH);
+      }
+      else
+      {
+        digitalWrite(LED_GREEN_PIN, LOW);
+      }
+    }
+    else if (greenElapsed >= 2000)
+    {
+      // Start new blink cycle every 2 seconds
+      greenBlinkStart = millis();
+    }
+    else
+    {
+      // Wait period - LED stays off
+      digitalWrite(LED_GREEN_PIN, LOW);
+    }
+    
+    // Ensure other LEDs are off
+    digitalWrite(LED_YELLOW_PIN, LOW);
+    return;
   }
+
+  // Priority 3: YELLOW LED when GPS is not locked (and not in boot)
+  if (!gpsLocked)
+  {
+    // YELLOW LED blinks once every 1.5 seconds when GPS is not locked
+    if (yellowBlinkStart == 0)
+    {
+      yellowBlinkStart = millis();
+    }
+    
+    unsigned long yellowElapsed = millis() - yellowBlinkStart;
+    
+    if (yellowElapsed < YELLOW_BLINK_DURATION)
+    {
+      // ON for first half of duration (50ms ON, 50ms OFF)
+      if (yellowElapsed < YELLOW_BLINK_DURATION / 2)
+      {
+        digitalWrite(LED_YELLOW_PIN, HIGH);
+      }
+      else
+      {
+        digitalWrite(LED_YELLOW_PIN, LOW);
+      }
+    }
+    else if (yellowElapsed >= 1500)
+    {
+      // Start new blink cycle every 1.5 seconds
+      yellowBlinkStart = millis();
+    }
+    else
+    {
+      // Wait period - LED stays off
+      digitalWrite(LED_YELLOW_PIN, LOW);
+    }
+    
+    // Ensure other LEDs are off
+    digitalWrite(LED_GREEN_PIN, LOW);
+    return;
+  }
+
+  // Priority 4: All LEDs OFF when GPS is locked but sensors are not OK
+  digitalWrite(LED_YELLOW_PIN, LOW);
+  digitalWrite(LED_GREEN_PIN, LOW);
 }
 
 void updateBuzzer()
@@ -718,12 +797,10 @@ void updateBuzzer()
   {
     targetPattern = BUZZER_BOOT;
   }
-  else if (timeSinceStart > BUZZER_MODE_DELAY &&
-           timeSinceStart < (BUZZER_STATUS_TIMEOUT + BUZZER_MODE_DELAY) &&
-           (currentState == TEST_MODE))
+  else if (currentState == TEST_MODE && timeSinceStart > 5000 && timeSinceStart < 10000)
   {
-    // Status indication period - only in TEST_MODE after delay and within timeout
-    targetPattern = BUZZER_STATUS_CHECK;
+    // Status indication: 5-10 seconds after boot, only in TEST_MODE
+    targetPattern = BUZZER_STATUS;
   }
   else if (apogeeReached && currentAltitude < 50 &&
            (currentState == DESCENT || currentState == AEROBRAKE_RELEASE || currentState == IMPACT))
@@ -753,16 +830,43 @@ void updateBuzzer()
     break;
 
   case BUZZER_BOOT:
-    // 3 beeps at startup
+    // 3 short beeps at startup - simplified direct control
     if (buzzerTargetBeeps == 0)
     {
       buzzerTargetBeeps = 3;
     }
-    executeBuzzerBeeps(1000, 1000); // 1s on, 1s off
+    
+    // Direct beep control for boot - more reliable
+    if (buzzerBeepCount < buzzerTargetBeeps)
+    {
+      unsigned long beepCycle = (BUZZER_BEEP_SHORT + BUZZER_GAP_SHORT) * buzzerBeepCount;
+      
+      if (patternElapsed >= beepCycle && patternElapsed < (beepCycle + BUZZER_BEEP_SHORT))
+      {
+        // Beep ON
+        digitalWrite(BUZZER_PIN, HIGH);
+      }
+      else if (patternElapsed >= (beepCycle + BUZZER_BEEP_SHORT) && patternElapsed < (beepCycle + BUZZER_BEEP_SHORT + BUZZER_GAP_SHORT))
+      {
+        // Beep OFF (gap)
+        digitalWrite(BUZZER_PIN, LOW);
+      }
+      
+      // Move to next beep when cycle is complete
+      if (patternElapsed >= (beepCycle + BUZZER_BEEP_SHORT + BUZZER_GAP_SHORT))
+      {
+        buzzerBeepCount++;
+      }
+    }
+    else
+    {
+      // All beeps completed
+      digitalWrite(BUZZER_PIN, LOW);
+    }
     break;
 
-  case BUZZER_STATUS_CHECK:
-    // Different patterns based on system status
+  case BUZZER_STATUS:
+    // Different number of beeps based on system status
     if (buzzerTargetBeeps == 0)
     {
       if (sensorsOK && gpsLocked)
@@ -781,16 +885,16 @@ void updateBuzzer()
         buzzerTargetBeeps = 3;
       }
     }
-    executeBuzzerBeeps(1000, 1000); // 1s on, 1s off for all conditions
+    executeBuzzerBeeps(BUZZER_BEEP_SHORT, BUZZER_GAP_SHORT); // 150ms on, 200ms off
     break;
 
   case BUZZER_RECOVERY:
     // 1 long beep every 3 seconds for recovery
-    if (patternElapsed < 1000)
-    { // 1000ms long beep
+    if (patternElapsed < BUZZER_BEEP_LONG)
+    { 
       digitalWrite(BUZZER_PIN, HIGH);
     }
-    else if (patternElapsed >= BUZZER_PATTERN_INTERVAL)
+    else if (patternElapsed >= BUZZER_RECOVERY_INTERVAL)
     {
       // Reset pattern every 3 seconds
       buzzerPatternStart = now;
@@ -841,6 +945,12 @@ void triggerGreenBlink()
 {
   greenBlinkStart = millis();
   // Green LED will blink for GREEN_BLINK_DURATION (100ms) when data operations occur
+}
+
+void triggerYellowBlink()
+{
+  yellowBlinkStart = millis();
+  // Yellow LED will start blinking when GPS is not locked
 }
 
 // ==================== SYSTEM STATUS CHECK ====================
