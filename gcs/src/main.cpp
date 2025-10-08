@@ -1,71 +1,59 @@
+// MAXIMUM SPEED LoRa receiver for GCS - OPTIMIZED
 #include <Arduino.h>
 #include <SPI.h>
 #include <LoRa.h>
 
-// LoRa pin definitions for ESP32
-#define LORA_SCK  18  // SCK pin
-#define LORA_MISO 19  // MISO pin
-#define LORA_MOSI 23  // MOSI pin
-#define LORA_SS   5   // NSS pin
-#define LORA_RST  27  // RST pin
-#define LORA_DIO0 15  // DIO0 pin
+const long LORA_FREQ = 435E6;
+const int LORA_SCK  = 18;
+const int LORA_MISO = 19;
+const int LORA_MOSI = 23;
+const int LORA_SS   = 5;   // CS
+const int LORA_RST  = 4;
+const int LORA_DIO0 = 26;
+
+unsigned long lastHeartbeat = 0;
+uint32_t rxCount = 0;
 
 void setup() {
-  // Initialize Serial communication
   Serial.begin(115200);
-  while (!Serial);
-  
-  Serial.println("LoRa Ground Station Initializing...");
+  delay(50);
+  Serial.println("MAXIMUM SPEED LoRa RX starting...");
 
-  // Setup LoRa transceiver module
-  SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_SS);
+  SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI);
   LoRa.setPins(LORA_SS, LORA_RST, LORA_DIO0);
-
-  // Initialize LoRa with 433MHz frequency
-  if (!LoRa.begin(433E6)) {
-    Serial.println("Starting LoRa failed!");
-    while (1);
+  if (!LoRa.begin(LORA_FREQ)) {
+    Serial.println("LoRa init failed - check wiring and module");
+    while (1) delay(1000);
   }
   
-  // Set LoRa parameters
-  LoRa.setSpreadingFactor(7);           // ranges from 6-12, default 7
-  LoRa.setSignalBandwidth(125E3);       // 7.8E3, 10.4E3, 15.6E3, 20.8E3, 31.25E3, 41.7E3, 62.5E3, 125E3, 250E3
-  LoRa.setCodingRate4(5);               // ranges from 5-8, default 5
-  LoRa.setSyncWord(0xF3);               // ranges from 0-0xFF, default 0x34
+  // OPTIMIZE LORA FOR MAXIMUM SPEED RECEPTION - MATCH TX SETTINGS
+  LoRa.setSpreadingFactor(7);     // SF7 fastest
+  LoRa.setSignalBandwidth(250E3); // 250kHz fastest bandwidth
+  LoRa.setCodingRate4(5);         // 4/5 fastest coding rate
+  LoRa.setPreambleLength(6);      // Minimum preamble
+  LoRa.setSyncWord(0x12);
   
-  Serial.println("LoRa Ground Station Initialized Successfully!");
-  Serial.println("Listening for incoming packets...");
+  Serial.println("GCS receiver optimized for MAXIMUM SPEED reception");
 }
 
 void loop() {
-  // Check for incoming LoRa packets
   int packetSize = LoRa.parsePacket();
   if (packetSize) {
-    // Read packet
-    String receivedData = "";
-    while (LoRa.available()) {
-      receivedData += (char)LoRa.read();
-    }
-    
-    // Print received data
-    Serial.print("Received packet: ");
-    Serial.print(receivedData);
-    Serial.print(" | RSSI: ");
-    Serial.print(LoRa.packetRssi());
-    Serial.print(" | SNR: ");
-    Serial.println(LoRa.packetSnr());
-    
-    // Optional: Send acknowledgment back
-    // sendAcknowledgment();
+    rxCount++;
+    String payload = "";
+    while (LoRa.available()) payload += (char)LoRa.read();
+    int rssi = LoRa.packetRssi();
+    float snr = LoRa.packetSnr();
+    unsigned long now = millis();
+    Serial.printf("RX #%lu @ %lu ms | %d bytes | RSSI=%d dB | SNR=%.1f | %s\n", 
+                  (unsigned long)rxCount, now, packetSize, rssi, snr, payload.c_str());
   }
   
-  delay(100); // Small delay to prevent excessive polling
-}
-
-// Optional function to send acknowledgment
-void sendAcknowledgment() {
-  LoRa.beginPacket();
-  LoRa.print("ACK");
-  LoRa.endPacket();
-  Serial.println("Acknowledgment sent");
+  // Periodic heartbeat every 10 seconds
+  if (millis() - lastHeartbeat > 10000) {
+    Serial.printf("GCS alive - received %lu packets\n", (unsigned long)rxCount);
+    lastHeartbeat = millis();
+  }
+  
+  // No delay - maximum reception speed
 }

@@ -33,7 +33,7 @@
 #define LORA_SS 5
 #define LORA_RST 4
 #define LORA_DIO0 26
-#define LORA_BAND 433E6
+#define LORA_BAND 435E6  // 435 MHz for optimized transmission
 
 // Servo Pin
 #define SERVO_PIN 25
@@ -49,10 +49,10 @@
 #define UART2_RX 16
 #define UART2_TX 17
 
-// Timing Constants
-#define SENSOR_READ_INTERVAL 500  // Read sensors every 500ms
-#define PRIMARY_DATA_TIMEOUT 5000 // Consider Primary lost after 5 seconds
-#define LORA_TX_TIMEOUT 2000      // LoRa transmission timeout
+// Timing Constants - OPTIMIZED FOR MAXIMUM SPEED
+#define SENSOR_READ_INTERVAL 50   // Read sensors every 50ms (20Hz maximum speed)
+#define PRIMARY_DATA_TIMEOUT 2000 // Consider Primary lost after 2 seconds
+#define LORA_TX_TIMEOUT 500       // LoRa transmission timeout (faster)
 
 // LED Timing Constants (matching Primary ESP32 timing logic)
 const unsigned long LED_D2_BLINK_DURATION = 100;    // 100ms blink duration
@@ -143,9 +143,9 @@ void loop()
     // Always check for commands from Primary first (highest priority)
     receiveFromPrimary();
 
-    // Read local sensors periodically (reduced frequency since REQ_DATA provides on-demand updates)
-    if (millis() - lastSensorRead >= SENSOR_READ_INTERVAL * 2)
-    { // 1 second instead of 500ms
+    // Read local sensors at maximum speed - no delay multiplier
+    if (millis() - lastSensorRead >= SENSOR_READ_INTERVAL)
+    {
         readLocalSensors();
         // Check all subsystem errors
         checkSecondaryErrors();
@@ -156,7 +156,8 @@ void loop()
     // Update LED status indicators
     updateLEDs();
 
-    delay(50); // Small delay to prevent excessive CPU usage
+    // Minimal delay - OPTIMIZED FOR MAXIMUM SPEED
+    delay(1);
 }
 
 void initializeSensors()
@@ -192,16 +193,17 @@ void initializeLoRa()
 
     if (LoRa.begin(LORA_BAND))
     {
-        // Configure LoRa parameters
-        LoRa.setSpreadingFactor(7);     // SF7 for faster transmission
-        LoRa.setSignalBandwidth(125E3); // 125 kHz bandwidth
-        LoRa.setCodingRate4(5);         // 4/5 coding rate
-        LoRa.setPreambleLength(8);      // 8 symbol preamble
+        // Configure LoRa parameters - OPTIMIZED FOR MAXIMUM SPEED
+        LoRa.setSpreadingFactor(7);     // SF7 for fastest transmission
+        LoRa.setSignalBandwidth(250E3); // 250 kHz bandwidth (faster than 125E3)
+        LoRa.setCodingRate4(5);         // 4/5 coding rate (fastest)
+        LoRa.setPreambleLength(6);      // 6 symbol preamble (minimum for reliability)
         LoRa.setSyncWord(0x12);         // Sync word
-        LoRa.enableCrc();               // Enable CRC
+        LoRa.setTxPower(20);            // Maximum TX power for range
+        LoRa.enableCrc();               // Enable CRC for error detection
 
         loraInitialized = true;
-        Serial.println(" SUCCESS");
+        Serial.println(" SUCCESS - OPTIMIZED FOR SPEED");
     }
     else
     {
@@ -363,15 +365,15 @@ void transmitViaLoRa(String csvData)
         return;
     }
 
-    Serial.print("Transmitting via LoRa: ");
+    Serial.print("TX LoRa: ");
 
-    // Begin LoRa packet
+    // Begin LoRa packet - OPTIMIZED FOR SPEED
     if (LoRa.beginPacket())
     {
         LoRa.print(csvData);
 
-        // End packet and check if transmission was successful
-        if (LoRa.endPacket())
+        // Use async (non-blocking) transmission for maximum speed
+        if (LoRa.endPacket(true))  // true = async/non-blocking
         {
             loraTransmissionFailed = false;
             Serial.println("SUCCESS");

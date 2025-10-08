@@ -169,10 +169,10 @@ enum BuzzerPattern
 };
 BuzzerPattern currentBuzzerPattern = BUZZER_OFF;
 
-// Data collection intervals
-const unsigned long DATA_INTERVAL = 1000;           // 1Hz data collection
-const unsigned long UART_INTERVAL = 800;            // UART request every 800ms
-const unsigned long STATE_UPDATE_INTERVAL = 500;    // State check every 500ms
+// Data collection intervals - OPTIMIZED FOR MAXIMUM SPEED
+const unsigned long DATA_INTERVAL = 100;           // 10Hz data collection (maximum speed)
+const unsigned long UART_INTERVAL = 50;            // UART request every 50ms (fast sync)
+const unsigned long STATE_UPDATE_INTERVAL = 100;    // State check every 100ms
 const unsigned long GREEN_BLINK_DURATION = 100;     // 100ms blink duration
 const unsigned long YELLOW_BLINK_DURATION = 100;    // 100ms blink duration
 
@@ -610,17 +610,16 @@ bool writeToSD(String csvRow)
 
 void updateFlightState()
 {
-  static unsigned long bootTime = millis();
-
   // Update current altitude for state decisions
   currentAltitude = secondaryData.dataValid ? secondaryData.bmp390Altitude : primaryData.altitude;
 
   switch (currentState)
   {
   case BOOT:
-    if (millis() - bootTime > 5000)
+    if (millis() - missionStartTime > 5000)
     { // 5 seconds boot time
       currentState = TEST_MODE;
+      Serial.println("FLIGHT STATE: BOOT -> TEST_MODE");
     }
     break;
 
@@ -1171,6 +1170,7 @@ void loop()
                    ", YELLOW: " + String(!gpsLocked ? "ON" : "OFF") +
                    ", GREEN: " + String(sensorsOK ? "ON" : "OFF"));
     Serial.println("GPS Locked: " + String(gpsLocked) + ", Sensors OK: " + String(sensorsOK));
+    Serial.println("LED Debug - State: " + String(currentState) + ", Boot Time: " + String(millis() - missionStartTime) + "ms");
     Serial.println("GPS Sats: " + String(primaryData.gnssSats) + ", GPS Age: " + String(gps.location.age()));
     Serial.println("Buzzer Pattern: " + String(currentBuzzerPattern) + ", Beep Count: " + String(buzzerBeepCount));
     Serial.println("---");
@@ -1180,6 +1180,21 @@ void loop()
   updateLEDs();
   updateBuzzer();
 
-  // Small delay to prevent watchdog issues
-  delay(10);
+  // LED DEBUG OUTPUT (every 2 seconds)
+  static unsigned long lastLEDDebug = 0;
+  if (millis() - lastLEDDebug > 2000) {
+    Serial.println("=== LED DEBUG ===");
+    Serial.println("currentState: " + String(currentState) + " (BOOT=0, TEST_MODE=1, LAUNCH_PAD=2, ...)");
+    Serial.println("sensorsOK: " + String(sensorsOK));
+    Serial.println("gpsLocked: " + String(gpsLocked));
+    Serial.println("missionTime: " + String(millis() - missionStartTime) + "ms");
+    Serial.println("Expected LEDs - RED: " + String(currentState == BOOT ? "ON" : "OFF") +
+                   ", YELLOW: " + String(!gpsLocked && currentState != BOOT ? "BLINK" : "OFF") +
+                   ", GREEN: " + String(sensorsOK && gpsLocked && currentState != BOOT ? "BLINK" : "OFF"));
+    Serial.println("=================");
+    lastLEDDebug = millis();
+  }
+
+  // MINIMAL delay for maximum speed - OPTIMIZED
+  delay(1);
 }
