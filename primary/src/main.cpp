@@ -10,8 +10,8 @@
  * - SD Card: SPI (GPIO23-MOSI, GPIO19-MISO, GPIO18-SCK, GPIO5-CS)
  * - Buzzer: GPIO0 (Boot pin via transistor, active HIGH)
  * - LEDs: D12(RED), D13(YELLOW), D14(GREEN)
+ * - Servo: GPIO27 (Parachute deployment)
  * - UART0: Communication with Secondary ESP32
- * - Battery ADC: GPIO36 (VP pin)
  */
 
 #include <Arduino.h>
@@ -24,6 +24,7 @@
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 #include <TinyGPS++.h>
+#include <ESP32Servo.h>
 
 // ==================== PIN DEFINITIONS ====================
 // LEDs
@@ -32,7 +33,7 @@
 #define LED_GREEN_PIN 14
 
 // Buzzer
-#define BUZZER_PIN      2   // GPIO2
+#define BUZZER_PIN 2 // GPIO2
 
 // ==================== ERROR CODE DEFINITIONS ====================
 // Subsystem IDs for error tracking
@@ -61,8 +62,8 @@
 #define GPS_RX_PIN 16
 #define GPS_TX_PIN 17
 
-// ADC Battery
-#define BATTERY_ADC_PIN 36
+// Servo
+#define SERVO_PIN 27
 
 // ==================== GLOBAL OBJECTS ====================
 HardwareSerial gpsSerial(2);       // UART2 for GPS
@@ -70,6 +71,7 @@ HardwareSerial secondarySerial(0); // UART0 for Secondary ESP32
 TinyGPSPlus gps;
 Adafruit_BMP280 bmp280;
 Adafruit_MPU6050 mpu6050;
+Servo lidServo; // Servo for parachute deployment
 
 // ==================== GLOBAL VARIABLES ====================
 // Mission data
@@ -97,12 +99,12 @@ struct SensorData
   float altitude = 0.0;
   float pressure = 0.0;
   float temperature = 0.0;
-  float voltage = 0.0;
   String gnssTime = "";
   float gnssLat = 0.0;
   float gnssLong = 0.0;
   float gnssAlt = 0.0;
   int gnssSats = 0;
+  float gnssSpeed = 0.0; // GNSS speed in m/s
   float accelX = 0.0, accelY = 0.0, accelZ = 0.0;
   float gyroX = 0.0, gyroY = 0.0, gyroZ = 0.0;
   float gyroSpinRate = 0.0;
@@ -114,6 +116,7 @@ struct SecondaryData
   float bmp390Altitude = 0.0;
   float bmp390Pressure = 0.0;
   float bmp390Temperature = 0.0;
+  float voltage = 0.0;
   String servoStatus = "";
   String pidOutput = "";
   bool dataValid = false;
@@ -128,7 +131,6 @@ struct SystemErrors
   bool mpu6050Error = false; // ID: 1
   bool bmp280Error = false;  // ID: 2
   bool sdCardError = false;  // ID: 3
-  bool batteryError = false; // ID: 4
   bool gnssError = false;    // ID: 5
   bool pidError = false;     // ID: 6 (from Secondary)
   bool cameraError = false;  // ID: 7
@@ -163,23 +165,23 @@ int buzzerTargetBeeps = 0;
 enum BuzzerPattern
 {
   BUZZER_OFF = 0,
-  BUZZER_BOOT = 1,         // 3 short beeps at startup
-  BUZZER_STATUS = 2,       // Status indication (1-3 beeps based on system health)
-  BUZZER_RECOVERY = 3      // Long beeps for recovery after landing
+  BUZZER_BOOT = 1,    // 3 short beeps at startup
+  BUZZER_STATUS = 2,  // Status indication (1-3 beeps based on system health)
+  BUZZER_RECOVERY = 3 // Long beeps for recovery after landing
 };
 BuzzerPattern currentBuzzerPattern = BUZZER_OFF;
 
 // Data collection intervals - OPTIMIZED FOR MAXIMUM SPEED
-const unsigned long DATA_INTERVAL = 100;           // 10Hz data collection (maximum speed)
-const unsigned long UART_INTERVAL = 50;            // UART request every 50ms (fast sync)
-const unsigned long STATE_UPDATE_INTERVAL = 100;    // State check every 100ms
-const unsigned long GREEN_BLINK_DURATION = 100;     // 100ms blink duration
-const unsigned long YELLOW_BLINK_DURATION = 100;    // 100ms blink duration
+const unsigned long DATA_INTERVAL = 100;         // 10Hz data collection (maximum speed)
+const unsigned long UART_INTERVAL = 50;          // UART request every 50ms (fast sync)
+const unsigned long STATE_UPDATE_INTERVAL = 100; // State check every 100ms
+const unsigned long GREEN_BLINK_DURATION = 100;  // 100ms blink duration
+const unsigned long YELLOW_BLINK_DURATION = 100; // 100ms blink duration
 
 // Buzzer timing - short and simple
-const unsigned long BUZZER_BEEP_SHORT = 150;        // 150ms short beep
-const unsigned long BUZZER_BEEP_LONG = 500;         // 500ms long beep
-const unsigned long BUZZER_GAP_SHORT = 200;         // 200ms gap between beeps
+const unsigned long BUZZER_BEEP_SHORT = 150;         // 150ms short beep
+const unsigned long BUZZER_BEEP_LONG = 500;          // 500ms long beep
+const unsigned long BUZZER_GAP_SHORT = 200;          // 200ms gap between beeps
 const unsigned long BUZZER_RECOVERY_INTERVAL = 3000; // 3s between recovery beeps
 
 // Flight logic variables
@@ -187,6 +189,7 @@ float maxAltitude = 0.0;
 bool apogeeReached = false;
 float currentAltitude = 0.0;
 unsigned long ascentStartTime = 0;
+bool servoOpen = false; // Track servo position
 
 // BMP280 baseline calibration
 float baselineAltitudeBMP280 = 0.0;
@@ -198,12 +201,12 @@ bool initializeI2C();
 bool initializeSD();
 void initializeUART();
 void calibrateBaselineBMP280();
+void initializeServo();
 
 // ==================== SENSOR READING FUNCTIONS ====================
 void readGPS();
 bool readMPU6050();
 bool readBMP280();
-void readBattery();
 
 // ==================== UART COMMUNICATION ====================
 bool requestSecondaryData();
@@ -231,7 +234,6 @@ String generateErrorCode();
 void checkMPU6050Status();
 void checkBMP280Status();
 void checkSDCardStatus();
-void checkBatteryStatus();
 void checkGNSSStatus();
 void checkSerialStatus();
 void checkCameraStatus();
@@ -311,7 +313,7 @@ bool initializeSD()
     File file = SD.open("/telemetry.csv", FILE_WRITE);
     if (file)
     {
-      file.println("TEAM_ID,TIMESTAMP,PACKET_COUNT,ALTITUDE,PRESSURE,TEMP,VOLTAGE,GNSS_TIME,GNSS_LAT,GNSS_LONG,GNSS_ALT,GNSS_SATS,ACCEL_X,ACCEL_Y,ACCEL_Z,GYRO_X,GYRO_Y,GYRO_Z,GYRO_SPIN_RATE,FLIGHT_STATE,SERVO_STATUS,PID_SPEED,ERROR_CODE");
+      file.println("TEAM_ID,TIMESTAMP,PACKET_COUNT,ALTITUDE,PRESSURE,TEMP,VOLTAGE,GNSS_TIME,GNSS_LAT,GNSS_LONG,GNSS_ALT,GNSS_SATS,ACCEL_X,ACCEL_Y,ACCEL_Z,GYRO_X,GYRO_Y,GYRO_Z,GYRO_SPIN_RATE,FLIGHT_STATE,SERVO_STATUS,ERROR_CODE,GNSS_SPEED");
       file.close();
       Serial.println("CSV header created");
     }
@@ -368,6 +370,17 @@ void calibrateBaselineBMP280()
   }
 }
 
+void initializeServo()
+{
+  Serial.print("Initializing parachute servo...");
+
+  lidServo.attach(SERVO_PIN);
+  lidServo.write(90); // Start with parachute closed (90 degrees)
+  servoOpen = false;
+
+  Serial.println(" SUCCESS");
+}
+
 // ==================== SENSOR READING FUNCTIONS ====================
 
 void readGPS()
@@ -391,6 +404,11 @@ void readGPS()
       if (gps.satellites.isValid())
       {
         primaryData.gnssSats = gps.satellites.value();
+      }
+
+      if (gps.speed.isValid())
+      {
+        primaryData.gnssSpeed = gps.speed.mps(); // Speed in meters/second
       }
 
       if (gps.time.isValid())
@@ -446,14 +464,6 @@ bool readBMP280()
   return (!isnan(primaryData.temperature) && !isnan(primaryData.pressure));
 }
 
-void readBattery()
-{
-  int adcValue = analogRead(BATTERY_ADC_PIN);
-  // Convert ADC to voltage for 18650 x 2 with 3:1 voltage divider (100k:47k)
-  // ADC reading * (3.3V / 4095) * voltage_divider_ratio
-  primaryData.voltage = (adcValue / 4095.0) * 3.3 * 3.14; // 3.14 = (100k+47k)/47k
-}
-
 // ==================== UART COMMUNICATION ====================
 
 bool requestSecondaryData()
@@ -481,7 +491,7 @@ bool requestSecondaryData()
     return false;
   }
 
-  // Parse secondary data: "ALT:123.45,PRESS:1013.25,TEMP:25.5,SERVO:OK,PID:0.75,ERR:090"
+  // Parse secondary data: "ALT:123.45,PRESS:1013.25,TEMP:25.5,VOLT:7.20,PID:0.75,ERR:090"
   if (response.startsWith("DATA:"))
   {
     response = response.substring(5); // Remove "DATA:" prefix
@@ -489,7 +499,7 @@ bool requestSecondaryData()
     int altIndex = response.indexOf("ALT:");
     int pressIndex = response.indexOf("PRESS:");
     int tempIndex = response.indexOf("TEMP:");
-    int servoIndex = response.indexOf("SERVO:");
+    int voltIndex = response.indexOf("VOLT:");
     int pidIndex = response.indexOf("PID:");
     int errIndex = response.indexOf("ERR:");
 
@@ -499,9 +509,9 @@ bool requestSecondaryData()
       secondaryData.bmp390Pressure = response.substring(pressIndex + 6, response.indexOf(',', pressIndex)).toFloat();
       secondaryData.bmp390Temperature = response.substring(tempIndex + 5, response.indexOf(',', tempIndex)).toFloat();
 
-      if (servoIndex >= 0)
+      if (voltIndex >= 0)
       {
-        secondaryData.servoStatus = response.substring(servoIndex + 6, response.indexOf(',', servoIndex));
+        secondaryData.voltage = response.substring(voltIndex + 5, response.indexOf(',', voltIndex)).toFloat();
       }
 
       if (pidIndex >= 0)
@@ -560,7 +570,7 @@ String createCSVRow()
   csvRow += String(useAltitude, 2) + ",";
   csvRow += String(usePressure, 2) + ",";
   csvRow += String(useTemperature, 2) + ",";
-  csvRow += String(primaryData.voltage, 2) + ",";
+  csvRow += String(secondaryData.voltage, 2) + ",";
   csvRow += primaryData.gnssTime + ",";
   csvRow += String(primaryData.gnssLat, 6) + ",";
   csvRow += String(primaryData.gnssLong, 6) + ",";
@@ -575,21 +585,16 @@ String createCSVRow()
   csvRow += String(primaryData.gyroSpinRate, 3) + ",";
   csvRow += String(currentState) + ",";
 
-  // Separate columns for servo status and PID speed
-  String servoStatus = "";
-  String pidSpeed = "";
-
-  if (secondaryData.dataValid)
-  {
-    servoStatus = secondaryData.servoStatus;
-    pidSpeed = secondaryData.pidOutput;
-  }
+  // Separate columns for servo status and GNSS speed
+  String servoStatus = servoOpen ? "OPEN" : "CLOSED";
 
   csvRow += servoStatus + ",";
-  csvRow += pidSpeed + ",";
 
-  // Add ErrorCode as 23rd column (now one column later)
-  csvRow += generateErrorCode();
+  // Add ErrorCode as 22nd column
+  csvRow += generateErrorCode() + ",";
+
+  // Add GNSS_SPEED as the last column
+  csvRow += String(primaryData.gnssSpeed, 2);
 
   return csvRow;
 }
@@ -648,7 +653,7 @@ void updateFlightState()
     }
 
     // Detect apogee (altitude decrease after significant ascent)
-    if (currentAltitude < (maxAltitude - 10) && maxAltitude > 100)
+    if (currentAltitude < (maxAltitude - 100) && maxAltitude > 100)
     {
       currentState = ROCKET_DEPLOY;
       apogeeReached = true;
@@ -656,6 +661,14 @@ void updateFlightState()
     break;
 
   case ROCKET_DEPLOY:
+    // Deploy parachute immediately when entering this state
+    if (!servoOpen)
+    {
+      lidServo.write(0); // Open parachute (0 degrees)
+      servoOpen = true;
+      Serial.println("PARACHUTE DEPLOYED - Apogee detected");
+    }
+
     // Transition to descent after a brief period
     if (millis() - ascentStartTime > 2000)
     {
@@ -690,7 +703,7 @@ void updateFlightState()
 void updateLEDs()
 {
   // LED Priority Logic - Only one LED can be active at a time
-  
+
   // Priority 1: RED LED during BOOT state only
   if (currentState == BOOT)
   {
@@ -711,9 +724,9 @@ void updateLEDs()
     {
       greenBlinkStart = millis();
     }
-    
+
     unsigned long greenElapsed = millis() - greenBlinkStart;
-    
+
     if (greenElapsed < GREEN_BLINK_DURATION)
     {
       // Blinking - ON for 25ms, OFF for 75ms within the 100ms blink period
@@ -736,7 +749,7 @@ void updateLEDs()
       // Wait period - LED stays off
       digitalWrite(LED_GREEN_PIN, LOW);
     }
-    
+
     // Ensure other LEDs are off
     digitalWrite(LED_YELLOW_PIN, LOW);
     return;
@@ -750,9 +763,9 @@ void updateLEDs()
     {
       yellowBlinkStart = millis();
     }
-    
+
     unsigned long yellowElapsed = millis() - yellowBlinkStart;
-    
+
     if (yellowElapsed < YELLOW_BLINK_DURATION)
     {
       // ON for first half of duration (50ms ON, 50ms OFF)
@@ -775,7 +788,7 @@ void updateLEDs()
       // Wait period - LED stays off
       digitalWrite(LED_YELLOW_PIN, LOW);
     }
-    
+
     // Ensure other LEDs are off
     digitalWrite(LED_GREEN_PIN, LOW);
     return;
@@ -834,12 +847,12 @@ void updateBuzzer()
     {
       buzzerTargetBeeps = 3;
     }
-    
+
     // Direct beep control for boot - more reliable
     if (buzzerBeepCount < buzzerTargetBeeps)
     {
       unsigned long beepCycle = (BUZZER_BEEP_SHORT + BUZZER_GAP_SHORT) * buzzerBeepCount;
-      
+
       if (patternElapsed >= beepCycle && patternElapsed < (beepCycle + BUZZER_BEEP_SHORT))
       {
         // Beep ON
@@ -850,7 +863,7 @@ void updateBuzzer()
         // Beep OFF (gap)
         digitalWrite(BUZZER_PIN, LOW);
       }
-      
+
       // Move to next beep when cycle is complete
       if (patternElapsed >= (beepCycle + BUZZER_BEEP_SHORT + BUZZER_GAP_SHORT))
       {
@@ -890,7 +903,7 @@ void updateBuzzer()
   case BUZZER_RECOVERY:
     // 1 long beep every 3 seconds for recovery
     if (patternElapsed < BUZZER_BEEP_LONG)
-    { 
+    {
       digitalWrite(BUZZER_PIN, HIGH);
     }
     else if (patternElapsed >= BUZZER_RECOVERY_INTERVAL)
@@ -971,7 +984,6 @@ void checkAllSubsystemErrors()
   checkMPU6050Status();
   checkBMP280Status();
   checkSDCardStatus();
-  checkBatteryStatus();
   checkGNSSStatus();
   checkSerialStatus();
   checkCameraStatus();
@@ -992,8 +1004,6 @@ String generateErrorCode()
     errorCode += "2";
   if (systemErrors.sdCardError)
     errorCode += "3";
-  if (systemErrors.batteryError)
-    errorCode += "4";
   if (systemErrors.gnssError)
     errorCode += "5";
   if (systemErrors.pidError)
@@ -1029,13 +1039,6 @@ void checkSDCardStatus()
 {
   // Check if SD card is accessible and telemetry file exists
   systemErrors.sdCardError = !SD.exists("/telemetry.csv");
-}
-
-void checkBatteryStatus()
-{
-  // Check if battery voltage is within acceptable range (5V - 8.4V for 2x18650)
-  systemErrors.batteryError = (primaryData.voltage < 5.0 || primaryData.voltage > 8.4 ||
-                               isnan(primaryData.voltage));
 }
 
 void checkGNSSStatus()
@@ -1075,6 +1078,7 @@ void setup()
   // Initialize subsystems
   initializePins();
   initializeUART();
+  initializeServo();
 
   delay(1000); // Allow systems to settle
 
@@ -1088,7 +1092,6 @@ void setup()
   }
 
   // Initial sensor readings
-  readBattery();
   if (i2cOK)
   {
     readMPU6050();
@@ -1129,7 +1132,6 @@ void loop()
   if (currentTime - lastDataCollection >= DATA_INTERVAL)
   {
     // Read all sensors
-    readBattery();
     readMPU6050();
     readBMP280();
 
@@ -1182,7 +1184,8 @@ void loop()
 
   // LED DEBUG OUTPUT (every 2 seconds)
   static unsigned long lastLEDDebug = 0;
-  if (millis() - lastLEDDebug > 2000) {
+  if (millis() - lastLEDDebug > 2000)
+  {
     Serial.println("=== LED DEBUG ===");
     Serial.println("currentState: " + String(currentState) + " (BOOT=0, TEST_MODE=1, LAUNCH_PAD=2, ...)");
     Serial.println("sensorsOK: " + String(sensorsOK));

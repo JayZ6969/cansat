@@ -6,7 +6,6 @@
  * Hardware:
  * - LoRa SX1278 (SPI)
  * - BMP390 sensor (I2C)
- * - Servo for lid control
  * - LEDs: D2 (init/rx indicator), D13 (LoRa/error indicator)
  * - UART2 communication with Primary ESP32
  *
@@ -24,7 +23,6 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BMP3XX.h>
 #include <LoRa.h>
-#include <ESP32Servo.h>
 
 // LoRa SX1278 Pin Definitions (SPI)
 #define LORA_SCK 18
@@ -33,10 +31,7 @@
 #define LORA_SS 5
 #define LORA_RST 4
 #define LORA_DIO0 26
-#define LORA_BAND 435E6  // 435 MHz for optimized transmission
-
-// Servo Pin
-#define SERVO_PIN 25
+#define LORA_BAND 435E6 // 435 MHz for optimized transmission
 
 // LED Pin Definitions
 #define LED_D2 2   // ON during init, BLINK when receiving from Primary
@@ -49,18 +44,20 @@
 #define UART2_RX 16
 #define UART2_TX 17
 
+// Voltage Sensor Pin (moved from Primary GPIO36 to Secondary GPIO25)
+#define BATTERY_ADC_PIN 25
+
 // Timing Constants - OPTIMIZED FOR MAXIMUM SPEED
 #define SENSOR_READ_INTERVAL 50   // Read sensors every 50ms (20Hz maximum speed)
 #define PRIMARY_DATA_TIMEOUT 2000 // Consider Primary lost after 2 seconds
 #define LORA_TX_TIMEOUT 500       // LoRa transmission timeout (faster)
 
 // LED Timing Constants (matching Primary ESP32 timing logic)
-const unsigned long LED_D2_BLINK_DURATION = 100;    // 100ms blink duration
-const unsigned long LED_D13_BLINK_DURATION = 100;   // 100ms blink duration
+const unsigned long LED_D2_BLINK_DURATION = 100;  // 100ms blink duration
+const unsigned long LED_D13_BLINK_DURATION = 100; // 100ms blink duration
 
 // Global Objects
 Adafruit_BMP3XX bmp390;
-Servo lidServo;
 HardwareSerial primarySerial(2); // UART2 for primary communication
 
 // System State Variables
@@ -75,7 +72,7 @@ float temperature = 0.0;
 float pressure = 0.0;
 float altitude = 0.0;
 float baselineAltitude = 0.0;
-bool lidOpen = false;
+float voltage = 0.0;
 float pidOutput = 0.0; // Dummy PID output or implement actual control
 
 // Communication State
@@ -95,7 +92,6 @@ bool ledBlinkState = false;
 // Function Declarations
 void initializeSensors();
 void initializeLoRa();
-void initializeServo();
 void readLocalSensors();
 void sendDataToPrimary();
 void receiveFromPrimary();
@@ -129,7 +125,6 @@ void setup()
     // Initialize all systems
     initializeSensors();
     initializeLoRa();
-    initializeServo();
     calibrateBaseline();
 
     // Initialization complete - turn OFF D2
@@ -212,17 +207,6 @@ void initializeLoRa()
     }
 }
 
-void initializeServo()
-{
-    Serial.print("Initializing lid servo...");
-
-    lidServo.attach(SERVO_PIN);
-    lidServo.write(0); // Start with lid closed
-    lidOpen = false;
-
-    Serial.println(" SUCCESS");
-}
-
 void calibrateBaseline()
 {
     if (!sensorsInitialized)
@@ -276,13 +260,20 @@ void readLocalSensors()
         altitude = 0.0;
     }
 
-    // Read servo status (lid position)
-    // This is a simple implementation - in reality, you might have feedback
-    // For now, we track the commanded position
+    // Read battery voltage
+    readBattery();
 
     // Dummy PID output (placeholder for actual control loop)
     // In a real implementation, this would be calculated based on control requirements
     pidOutput = sin(millis() / 1000.0) * 10.0; // Example: sinusoidal output for demo
+}
+
+void readBattery()
+{
+    int adcValue = analogRead(BATTERY_ADC_PIN);
+    // Convert ADC to voltage for 18650 x 2 with 3:1 voltage divider (100k:47k)
+    // ADC reading * (3.3V / 4095) * voltage_divider_ratio
+    voltage = (adcValue / 4095.0) * 3.3 * 3.14; // 3.14 = (100k+47k)/47k
 }
 
 void sendDataToPrimary()
@@ -295,7 +286,7 @@ void sendDataToPrimary()
     sensorData += "ALT:" + String(altitude, 2) + ",";
     sensorData += "PRESS:" + String(pressure, 2) + ",";
     sensorData += "TEMP:" + String(temperature, 2) + ",";
-    sensorData += "SERVO:" + String(lidOpen ? "OPEN" : "CLOSED") + ",";
+    sensorData += "VOLT:" + String(voltage, 2) + ",";
     sensorData += "PID:" + String(pidOutput, 2) + ",";
     sensorData += "ERR:" + getErrorStatus();
 
@@ -326,20 +317,6 @@ void receiveFromPrimary()
                 transmitViaLoRa(csvData);
 
                 Serial.println("Received CSV from Primary: " + csvData);
-            }
-            else if (receivedData.startsWith("SERVO_OPEN"))
-            {
-                // Command to open lid
-                lidServo.write(90);
-                lidOpen = true;
-                Serial.println("Lid opened by Primary command");
-            }
-            else if (receivedData.startsWith("SERVO_CLOSE"))
-            {
-                // Command to close lid
-                lidServo.write(0);
-                lidOpen = false;
-                Serial.println("Lid closed by Primary command");
             }
             else if (receivedData.equals("REQ_DATA"))
             {
@@ -373,7 +350,7 @@ void transmitViaLoRa(String csvData)
         LoRa.print(csvData);
 
         // Use async (non-blocking) transmission for maximum speed
-        if (LoRa.endPacket(true))  // true = async/non-blocking
+        if (LoRa.endPacket(true)) // true = async/non-blocking
         {
             loraTransmissionFailed = false;
             Serial.println("SUCCESS");
@@ -404,9 +381,9 @@ void updateLEDs()
         {
             ledD2BlinkStart = millis();
         }
-        
+
         unsigned long d2Elapsed = millis() - ledD2BlinkStart;
-        
+
         if (d2Elapsed < LED_D2_BLINK_DURATION)
         {
             // Blinking - ON for 25ms, OFF for 75ms within the 100ms blink period
@@ -419,7 +396,7 @@ void updateLEDs()
                 digitalWrite(LED_D2, LOW);
             }
         }
-        else if (d2Elapsed >= 1000)  // Repeat every 1 second when receiving data
+        else if (d2Elapsed >= 1000) // Repeat every 1 second when receiving data
         {
             // Start new blink cycle
             ledD2BlinkStart = millis();
@@ -455,9 +432,9 @@ void updateLEDs()
         {
             ledD13BlinkStart = millis();
         }
-        
+
         unsigned long d13Elapsed = millis() - ledD13BlinkStart;
-        
+
         if (d13Elapsed < LED_D13_BLINK_DURATION)
         {
             // ON for first half of duration (50ms ON, 50ms OFF)
@@ -470,7 +447,7 @@ void updateLEDs()
                 digitalWrite(LED_D13, LOW);
             }
         }
-        else if (d13Elapsed >= 1500)  // Repeat every 1.5 seconds (same as Primary Yellow)
+        else if (d13Elapsed >= 1500) // Repeat every 1.5 seconds (same as Primary Yellow)
         {
             // Start new blink cycle
             ledD13BlinkStart = millis();

@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AVINYA - Ground Control Station</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <script src="eel.js"></script>
+  </head>
+  <body>
+    <div class="gcs-container">
+      <!-- Header -->
+      <header class="gcs-header">
+        <div class="logo-section">
+          <div class="logo">
+            <img src="AVINYA.png" alt="AVINYA" class="avinya-logo" />
+          </div>
+          <div class="mission-info">
+            <h2 id="mission-id">2024-ASI-CANSAT-049</h2>
+          </div>
+        </div>
+        <div class="status-indicators">
+          <div class="status-item">
+            <span class="status-label">Camera Recording</span>
+            <span class="status-value" id="camera-status">Done</span>
+          </div>
+          <div class="status-item">
+            <span class="status-label">Parachute Deployed</span>
+            <span class="status-value" id="parachute-status">Mode</span>
+          </div>
+          <div class="status-item">
+            <span class="status-label">Calibration</span>
+            <span class="status-value" id="calibration-status">Decent</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Dashboard -->
+      <div class="dashboard-grid">
+        <!-- Left Panel - Map and Controls -->
+        <div class="left-panel">
+          <div class="map-container">
+            <div id="map"></div>
+          </div>
+
+          <div class="control-panel">
+            <!-- COM Port Selection -->
+            <div class="com-port-section">
+              <label for="com-port-select" class="com-port-label"
+                >COM Port:</label
+              >
+              <div class="com-port-controls">
+                <select id="com-port-select" class="com-port-dropdown">
+                  <option value="">Select COM Port...</option>
+                </select>
+                <button
+                  class="control-btn scan-ports"
+                  onclick="scanComPorts()"
+                  title="Refresh COM ports"
+                >
+                  🔄
+                </button>
+              </div>
+              <div class="baud-rate-section">
+                <label for="baud-rate-select" class="baud-rate-label"
+                  >Baud Rate:</label
+                >
+                <select id="baud-rate-select" class="baud-rate-dropdown">
+                  <option value="9600">9600</option>
+                  <option value="19200">19200</option>
+                  <option value="38400">38400</option>
+                  <option value="57600">57600</option>
+                  <option value="115200">115200</option>
+                </select>
+              </div>
+              <button
+                class="control-btn connect"
+                id="connect-btn"
+                onclick="toggleConnection()"
+              >
+                📡 CONNECT
+              </button>
+              <div class="connection-status" id="connection-status">
+                <span class="status-indicator" id="connection-indicator"></span>
+                <span class="status-text" id="connection-text"
+                  >Disconnected</span
+                >
+              </div>
+            </div>
+
+            <!-- Mission Controls -->
+            <div class="mission-controls">
+              <button
+                class="control-btn start-stop"
+                id="start-stop-btn"
+                onclick="toggleMission()"
+                disabled
+              >
+                🟢 START / STOP PLOTTING
+              </button>
+              <button class="control-btn telemetry" onclick="toggleTelemetry()">
+                📊 TELEMETRY
+              </button>
+              <button
+                class="control-btn calibration"
+                onclick="calibrateSensors()"
+              >
+                🔧 CALIBRATION
+              </button>
+              <button class="control-btn reset" onclick="resetDashboard()">
+                🔄 RESET DASHBOARD
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Center Panel - Charts -->
+        <div class="center-panel">
+          <!-- Reaction Wheel Chart -->
+          <div class="chart-container reaction-wheel">
+            <h3>Reaction wheel</h3>
+            <canvas id="reactionWheelChart"></canvas>
+          </div>
+
+          <!-- Gyroscope Chart -->
+          <div class="chart-container gyroscope">
+            <h3>Gyroscope</h3>
+            <canvas id="gyroscopeChart"></canvas>
+            <div class="axis-labels">
+              <span class="axis-x">🔴 X</span>
+              <span class="axis-y">🟡 Y</span>
+              <span class="axis-z">🔵 Z</span>
+            </div>
+          </div>
+
+          <!-- Environmental Charts Row -->
+          <div class="charts-row">
+            <div class="chart-container small">
+              <h4>Altitude (m)</h4>
+              <canvas id="altitudeChart"></canvas>
+            </div>
+            <div class="chart-container small">
+              <h4>Pressure (Pa)</h4>
+              <canvas id="pressureChart"></canvas>
+            </div>
+            <div class="chart-container small">
+              <h4>Temperature (°C)</h4>
+              <canvas id="temperatureChart"></canvas>
+            </div>
+            <div class="chart-container small">
+              <h4>Accelerometer</h4>
+              <canvas id="accelerometerChart"></canvas>
+              <div class="accel-labels">
+                <span>🔴 X 🟡 Y 🔵 Z</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mission Phase Indicator -->
+          <div class="phase-indicator">
+            <div class="phase-item active" data-phase="pre-launch">
+              Pre Launch
+            </div>
+            <div class="phase-item" data-phase="calibration">Calibration</div>
+            <div class="phase-item" data-phase="ready">Ready to Launch</div>
+            <div class="phase-item" data-phase="ascent">Ascent</div>
+            <div class="phase-item" data-phase="descent">Descent</div>
+            <div class="phase-item" data-phase="touchdown">Touch Down</div>
+          </div>
+        </div>
+
+        <!-- Right Panel - Data Display -->
+        <div class="right-panel">
+          <div class="data-section">
+            <h3>DATA</h3>
+
+            <div class="data-grid">
+              <div class="data-item">
+                <span class="data-label">Time (mins)</span>
+                <span class="data-value" id="mission-time">10:25</span>
+              </div>
+              <div class="data-item">
+                <span class="data-label">Mission Time (sec)</span>
+                <span class="data-value" id="mission-time-sec">309</span>
+              </div>
+
+              <div class="data-item">
+                <span class="data-label">Camera Recording</span>
+                <span class="data-value" id="camera-recording">Done</span>
+              </div>
+              <div class="data-item">
+                <span class="data-label">Calibration Done</span>
+                <span class="data-value" id="calibration-done">Done</span>
+              </div>
+
+              <div class="data-item">
+                <span class="data-label">Parachute Deployed</span>
+                <span class="data-value" id="parachute-deployed">Mode</span>
+              </div>
+              <div class="data-item">
+                <span class="data-label">Mode</span>
+                <span class="data-value" id="current-mode">Decent</span>
+              </div>
+
+              <div class="data-item">
+                <span class="data-label">Battery Percentage (%)</span>
+                <span class="data-value" id="battery-percentage">95</span>
+              </div>
+              <div class="data-item">
+                <span class="data-label">Battery Voltage (V)</span>
+                <span class="data-value" id="battery-voltage">8.30</span>
+              </div>
+
+              <div class="data-item">
+                <span class="data-label">Altitude (m)</span>
+                <span class="data-value" id="altitude-value">939.86</span>
+              </div>
+              <div class="data-item">
+                <span class="data-label">Pressure (pa)</span>
+                <span class="data-value" id="pressure-value">913.88</span>
+              </div>
+
+              <div class="data-item">
+                <span class="data-label">Packet Count</span>
+                <span class="data-value" id="packet-count">3025</span>
+              </div>
+              <div class="data-item">
+                <span class="data-label">Speed</span>
+                <span class="data-value" id="speed-value">0.16</span>
+              </div>
+
+              <div class="data-item">
+                <span class="data-label">Temperature (°C)</span>
+                <span class="data-value" id="temperature-value">27.7</span>
+              </div>
+              <div class="data-item full-width">
+                <span class="data-label">No of Satellites</span>
+                <span class="data-value" id="satellites-count">13</span>
+              </div>
+
+              <div class="data-item full-width">
+                <span class="data-label">Error Indicator</span>
+                <span class="data-value" id="error-indicator">All Good</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Alerts Panel -->
+          <div class="alerts-panel">
+            <h4>Mission Alerts</h4>
+            <div class="alerts-container" id="alerts-container">
+              <!-- Alerts will be populated here -->
+            </div>
+          </div>
+
+          <!-- Export Controls -->
+          <div class="export-panel">
+            <h4>Data Export</h4>
+            <button class="export-btn" onclick="exportData('csv')">
+              Export CSV
+            </button>
+            <button class="export-btn" onclick="exportData('json')">
+              Export JSON
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+      <div class="loading-spinner"></div>
+      <p>Connecting to CanSat...</p>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/charts.js"></script>
+    <script src="js/dashboard.js"></script>
+    <script src="js/map.js"></script>
+    <script src="js/main.js"></script>
+  </body>
+</html>
