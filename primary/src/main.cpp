@@ -104,10 +104,11 @@ struct SensorData
   float gnssLong = 0.0;
   float gnssAlt = 0.0;
   int gnssSats = 0;
-  float gnssSpeed = 0.0; // GNSS speed in m/s
   float accelX = 0.0, accelY = 0.0, accelZ = 0.0;
   float gyroX = 0.0, gyroY = 0.0, gyroZ = 0.0;
   float gyroSpinRate = 0.0;
+  float speed = 0.0;              // Speed calculated from MPU6050 acceleration
+  float lastAccelMagnitude = 0.0; // For speed calculation
   String optionalData = "";
 } primaryData;
 
@@ -194,6 +195,16 @@ bool servoOpen = false; // Track servo position
 // BMP280 baseline calibration
 float baselineAltitudeBMP280 = 0.0;
 
+// PID Controller Variables (for logging/telemetry only, not for hardware control)
+float pidSetpoint = 0.0;       // Target spin rate (0 = stable, no rotation)
+float pidKp = 0.5;             // Proportional gain
+float pidKi = 0.1;             // Integral gain
+float pidKd = 0.2;             // Derivative gain
+float pidIntegral = 0.0;       // Integral accumulator
+float pidLastError = 0.0;      // Last error for derivative calculation
+float pidOutput = 0.0;         // PID output value (for logging only)
+unsigned long pidLastTime = 0; // Last PID calculation time
+
 // ==================== INITIALIZATION FUNCTIONS ====================
 
 void initializePins();
@@ -207,6 +218,7 @@ void initializeServo();
 void readGPS();
 bool readMPU6050();
 bool readBMP280();
+float calculatePID(); // Calculate PID value from gyro spin rate (for logging only)
 
 // ==================== UART COMMUNICATION ====================
 bool requestSecondaryData();
@@ -406,10 +418,11 @@ void readGPS()
         primaryData.gnssSats = gps.satellites.value();
       }
 
-      if (gps.speed.isValid())
-      {
-        primaryData.gnssSpeed = gps.speed.mps(); // Speed in meters/second
-      }
+      // GNSS speed reading removed - now using MPU6050 acceleration-based speed calculation
+      // if (gps.speed.isValid())
+      // {
+      //   primaryData.gnssSpeed = gps.speed.mps(); // Speed in meters/second
+      // }
 
       if (gps.time.isValid())
       {
@@ -433,6 +446,9 @@ void readGPS()
 
 bool readMPU6050()
 {
+  static unsigned long lastReadTime = 0;
+  unsigned long currentTime = millis();
+
   sensors_event_t accel, gyro, temp;
 
   mpu6050.getEvent(&accel, &gyro, &temp);
@@ -452,6 +468,31 @@ bool readMPU6050()
                                   primaryData.gyroY * primaryData.gyroY +
                                   primaryData.gyroZ * primaryData.gyroZ);
 
+  // Calculate speed from acceleration magnitude (integration over time)
+  // Get acceleration magnitude in m/s² (using raw values before g-force conversion)
+  float accelMagnitude = sqrt(accel.acceleration.x * accel.acceleration.x +
+                              accel.acceleration.y * accel.acceleration.y +
+                              accel.acceleration.z * accel.acceleration.z);
+
+  // Remove gravity component (9.81 m/s²)
+  accelMagnitude = abs(accelMagnitude - 9.81);
+
+  // Calculate time delta in seconds
+  if (lastReadTime > 0)
+  {
+    float deltaTime = (currentTime - lastReadTime) / 1000.0; // Convert to seconds
+
+    // Integrate acceleration to get velocity: v = v0 + a*dt
+    primaryData.speed += accelMagnitude * deltaTime;
+
+    // Apply damping factor to prevent drift (0.98 means 2% decay per reading)
+    // This helps account for measurement errors and friction
+    primaryData.speed *= 0.98;
+  }
+
+  lastReadTime = currentTime;
+  primaryData.lastAccelMagnitude = accelMagnitude;
+
   return true;
 }
 
@@ -462,6 +503,68 @@ bool readBMP280()
   primaryData.altitude = bmp280.readAltitude(1013.25) - baselineAltitudeBMP280; // Zero-referenced altitude
 
   return (!isnan(primaryData.temperature) && !isnan(primaryData.pressure));
+}
+
+float calculatePID()
+{
+  // PID controller for reaction wheel stabilization (LOGGING ONLY - NOT USED FOR CONTROL)
+  // Uses gyroSpinRate from MPU6050 to calculate control output
+  // Target: maintain zero spin rate (stable orientation)
+
+  unsigned long currentTime = millis();
+
+  // Initialize on first run
+  if (pidLastTime == 0)
+  {
+    pidLastTime = currentTime;
+    pidLastError = 0.0;
+    pidIntegral = 0.0;
+    return 0.0;
+  }
+
+  // Calculate time delta in seconds
+  float deltaTime = (currentTime - pidLastTime) / 1000.0;
+
+  // Avoid division by zero or too-frequent updates
+  if (deltaTime < 0.01) // Less than 10ms
+  {
+    return pidOutput; // Return last calculated value
+  }
+
+  // Calculate error (setpoint - current value)
+  // Setpoint is 0 (we want no rotation for stable flight)
+  float error = pidSetpoint - primaryData.gyroSpinRate;
+
+  // Proportional term
+  float P = pidKp * error;
+
+  // Integral term (with anti-windup limiting)
+  pidIntegral += error * deltaTime;
+  // Limit integral to prevent windup
+  if (pidIntegral > 100.0)
+    pidIntegral = 100.0;
+  if (pidIntegral < -100.0)
+    pidIntegral = -100.0;
+  float I = pidKi * pidIntegral;
+
+  // Derivative term
+  float derivative = (error - pidLastError) / deltaTime;
+  float D = pidKd * derivative;
+
+  // Calculate total PID output
+  pidOutput = P + I + D;
+
+  // Limit output range (typical PWM range for motor control would be -255 to +255)
+  if (pidOutput > 255.0)
+    pidOutput = 255.0;
+  if (pidOutput < -255.0)
+    pidOutput = -255.0;
+
+  // Update for next iteration
+  pidLastError = error;
+  pidLastTime = currentTime;
+
+  return pidOutput;
 }
 
 // ==================== UART COMMUNICATION ====================
@@ -582,7 +685,7 @@ String createCSVRow()
   csvRow += String(primaryData.gyroX, 3) + ",";
   csvRow += String(primaryData.gyroY, 3) + ",";
   csvRow += String(primaryData.gyroZ, 3) + ",";
-  csvRow += String(primaryData.gyroSpinRate, 3) + ",";
+  csvRow += String(pidOutput, 2) + ","; // PID output (replaces gyroSpinRate for logging)
   csvRow += String(currentState) + ",";
 
   // Servo status: 0 = closed, 1 = open
@@ -593,8 +696,8 @@ String createCSVRow()
   // Add ErrorCode as 22nd column
   csvRow += generateErrorCode() + ",";
 
-  // Add GNSS_SPEED as the last column
-  csvRow += String(primaryData.gnssSpeed, 2);
+  // Add GNSS_SPEED as the last column (now calculated from MPU6050 acceleration)
+  csvRow += String(primaryData.speed, 2);
 
   return csvRow;
 }
@@ -1134,6 +1237,9 @@ void loop()
     // Read all sensors
     readMPU6050();
     readBMP280();
+
+    // Calculate PID output from gyro data (for logging/telemetry only)
+    calculatePID();
 
     // Check system status
     checkSystemStatus();

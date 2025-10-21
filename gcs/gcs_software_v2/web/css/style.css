@@ -83,9 +83,10 @@ body::before {
   justify-content: space-between;
   align-items: center;
   border-bottom: 2px solid var(--border-color);
-  height: 80px;
+  height: 85px;
   box-shadow: var(--glow-shadow);
   position: relative;
+  gap: 30px;
 }
 
 .gcs-header::before {
@@ -134,42 +135,118 @@ body::before {
   letter-spacing: 1px;
 }
 
-.status-indicators {
+/* Header Controls */
+.header-controls {
   display: flex;
-  gap: 35px;
+  align-items: center;
+  gap: 15px;
   z-index: 1;
+  flex: 1;
+  justify-content: flex-end;
 }
 
-.status-item {
-  text-align: center;
-  padding: 8px 12px;
-  background: rgba(15, 15, 35, 0.8);
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  transition: all 0.3s ease;
+.header-com-port,
+.header-baud-rate {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.status-item:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(0, 212, 255, 0.3);
-}
-
-.status-label {
-  display: block;
-  font-size: 11px;
+.header-label {
+  font-size: 10px;
   color: var(--text-secondary);
-  margin-bottom: 4px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  font-weight: 500;
 }
 
-.status-value {
-  display: block;
-  font-weight: bold;
-  color: var(--cyber-cyan);
-  font-size: 14px;
-  text-shadow: 0 0 5px rgba(0, 212, 255, 0.5);
+.header-port-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.header-controls .com-port-dropdown,
+.header-controls .baud-rate-dropdown {
+  padding: 5px 10px;
+  background: var(--deep-space);
+  border: 2px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+  min-width: 120px;
+  height: 28px;
+}
+
+.header-controls .com-port-dropdown:focus,
+.header-controls .baud-rate-dropdown:focus {
+  outline: none;
+  border-color: var(--cyber-cyan);
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+}
+
+.header-controls .scan-ports {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: auto;
+}
+
+.control-btn.connect.header-connect-btn {
+  min-height: 28px !important;
+  padding: 4px 12px !important;
+  gap: 4px !important;
+  flex-direction: row !important;
+  background: linear-gradient(135deg, var(--success-green), #00cc66) !important;
+  color: var(--space-black) !important;
+  box-shadow: 0 2px 8px rgba(0, 255, 136, 0.3) !important;
+  margin: 0 !important;
+  transform: none !important;
+}
+
+.control-btn.connect.header-connect-btn:hover {
+  box-shadow: 0 4px 12px rgba(0, 255, 136, 0.5) !important;
+  transform: translateY(-2px) !important;
+}
+
+.control-btn.connect.header-connect-btn.connected {
+  background: linear-gradient(135deg, var(--alert-red), #cc0000) !important;
+  color: white !important;
+  box-shadow: 0 2px 8px rgba(255, 68, 68, 0.3) !important;
+}
+
+.control-btn.connect.header-connect-btn.connected:hover {
+  box-shadow: 0 4px 12px rgba(255, 68, 68, 0.5) !important;
+  transform: translateY(-2px) !important;
+}
+
+.control-btn.connect.header-connect-btn.connecting {
+  background: linear-gradient(
+    135deg,
+    var(--warning-orange),
+    #cc8800
+  ) !important;
+  color: var(--space-black) !important;
+  box-shadow: 0 2px 8px rgba(255, 170, 0, 0.3) !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+}
+
+.control-btn.connect.header-connect-btn .btn-icon {
+  font-size: 12px !important;
+  margin-bottom: 0 !important;
+}
+
+.control-btn.connect.header-connect-btn .btn-text {
+  font-size: 10px !important;
+  font-weight: 700 !important;
 }
 
 /* Dashboard Grid */
@@ -180,7 +257,7 @@ body::before {
   gap: 15px;
   padding: 15px;
   min-height: 0;
-  height: calc(100vh - 80px);
+  height: calc(100vh - 85px);
   overflow: hidden;
 }
 
@@ -247,7 +324,7 @@ body::before {
 .com-port-section {
   background: rgba(15, 15, 35, 0.8);
   border-radius: 10px;
-  padding: 18px;
+  padding: 14px;
   border: 1px solid var(--border-color);
   box-shadow: 0 0 15px rgba(0, 212, 255, 0.2);
 }
@@ -255,7 +332,7 @@ body::before {
 .com-port-grid {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 
 .com-port-row {
@@ -288,12 +365,12 @@ body::before {
 .baud-rate-dropdown {
   flex: 1;
   min-width: 0;
-  padding: 10px 14px;
+  padding: 8px 12px;
   background: var(--deep-space);
   border: 2px solid var(--border-color);
   border-radius: 8px;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
   transition: all 0.3s ease;
   box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
@@ -308,13 +385,13 @@ body::before {
 
 .control-btn.scan-ports {
   flex-shrink: 0;
-  width: 45px;
-  height: 45px;
+  width: 38px;
+  height: 38px;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 14px;
   background: linear-gradient(135deg, var(--nebula-blue), var(--cosmic-purple));
   color: var(--text-primary);
   border: 1px solid var(--border-color);
@@ -337,9 +414,9 @@ body::before {
   color: var(--space-black);
   margin: 0;
   border: none;
-  border-radius: 10px;
-  padding: 16px 12px;
-  font-size: 14px;
+  border-radius: 8px;
+  padding: 12px 10px;
+  font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -349,17 +426,17 @@ body::before {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  min-height: 60px;
+  gap: 3px;
+  min-height: 50px;
   justify-content: center;
 }
 
 .control-btn.connect .btn-icon {
-  font-size: 20px;
+  font-size: 16px;
 }
 
 .control-btn.connect .btn-text {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
 }
 
@@ -389,9 +466,9 @@ body::before {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  font-size: 13px;
-  padding: 10px 16px;
+  gap: 8px;
+  font-size: 11px;
+  padding: 8px 12px;
   background: rgba(15, 15, 35, 0.6);
   border-radius: 8px;
   border: 1px solid var(--border-color);
@@ -399,8 +476,8 @@ body::before {
 }
 
 .status-indicator {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: var(--alert-red);
   display: inline-block;
@@ -429,34 +506,34 @@ body::before {
 .mission-controls {
   background: rgba(15, 15, 35, 0.8);
   border-radius: 10px;
-  padding: 18px;
+  padding: 14px;
   border: 1px solid var(--border-color);
   box-shadow: 0 0 15px rgba(0, 212, 255, 0.2);
 }
 
 .controls-section-title {
   color: var(--cyber-cyan);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   text-align: center;
   text-shadow: 0 0 5px rgba(0, 212, 255, 0.5);
   border-bottom: 1px solid var(--border-color);
-  padding-bottom: 8px;
+  padding-bottom: 6px;
 }
 
 .controls-grid {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .control-group {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 8px;
 }
 
 .primary-controls .control-btn {
@@ -484,13 +561,13 @@ body::before {
 }
 
 .control-btn {
-  padding: 16px 12px;
+  padding: 10px 8px;
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.3s ease;
-  font-size: 12px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   position: relative;
@@ -498,8 +575,8 @@ body::before {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  min-height: 70px;
+  gap: 4px;
+  min-height: 55px;
   justify-content: center;
 }
 
@@ -524,13 +601,13 @@ body::before {
 }
 
 .btn-icon {
-  font-size: 18px;
+  font-size: 14px;
   display: block;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 
 .btn-text {
-  font-size: 10px;
+  font-size: 9px;
   line-height: 1.2;
   text-align: center;
   font-weight: 700;
@@ -1259,19 +1336,42 @@ canvas {
   }
 }
 
+@media (max-width: 1400px) {
+  .header-controls {
+    gap: 10px;
+  }
+
+  .header-controls .com-port-dropdown,
+  .header-controls .baud-rate-dropdown {
+    min-width: 100px;
+  }
+}
+
 @media (max-width: 600px) {
   .gcs-header {
     height: auto;
     padding: 12px 15px;
     flex-direction: column;
-    gap: 15px;
+    gap: 12px;
   }
 
-  .status-indicators {
+  .header-controls {
+    width: 100%;
+    flex-wrap: wrap;
     justify-content: center;
-    gap: 20px;
+    gap: 8px;
   }
 
+  .header-com-port,
+  .header-baud-rate {
+    flex: 1;
+    min-width: 120px;
+  }
+
+  .header-connect-btn,
+  .header-connection-status {
+    width: 100%;
+  }
   .charts-row {
     grid-template-columns: 1fr;
   }

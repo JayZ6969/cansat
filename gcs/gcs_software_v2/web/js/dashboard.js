@@ -32,21 +32,23 @@ class Dashboard {
         this.updateElement('pressure-display', this.formatNumber(data.pressure, 2));
         this.updateElement('temperature-value', this.formatNumber(data.temperature, 1));
         this.updateElement('temperature-display', this.formatNumber(data.temperature, 1));
-        this.updateElement('battery-percentage', data.battery_percentage || 0);
         this.updateElement('battery-voltage', this.formatNumber(data.battery_voltage, 2));
         this.updateElement('speed-value', this.formatNumber(data.speed, 2));
         this.updateElement('packet-count', data.packet_count || 0);
         this.updateElement('satellites-count', data.num_satellites || 0);
         this.updateElement('error-indicator', data.error_indicator || 'All Good');
 
+        // Determine camera status - auto-set to Recording when data is being received
+        const cameraStatus = this.isPlotting && data.packet_count > 0 ? 'Recording' : (data.camera_recording ? 'Recording' : 'Stopped');
+        
         // Update status indicators
-        this.updateElement('camera-recording', data.camera_recording ? 'Recording' : 'Stopped');
+        this.updateElement('camera-recording', cameraStatus);
         this.updateElement('parachute-deployed', data.parachute_deployed ? 'Deployed' : 'Stowed');
         this.updateElement('calibration-done', data.calibration_done ? 'Done' : 'Pending');
         this.updateElement('current-mode', data.mode || 'Unknown');
 
         // Update status in header
-        this.updateElement('camera-status', data.camera_recording ? 'Recording' : 'Done');
+        this.updateElement('camera-status', cameraStatus);
         this.updateElement('parachute-status', data.parachute_deployed ? 'Deployed' : 'Mode');
         this.updateElement('calibration-status', data.calibration_done ? 'Done' : 'Decent');
 
@@ -98,13 +100,25 @@ class Dashboard {
     }
 
     updateMissionPhase(currentMode) {
+        // Map incoming mode strings to phase elements
         const phaseMapping = {
+            // Frontend display modes
             'Pre Launch': 'pre-launch',
             'Calibration': 'calibration',
             'Ready to Launch': 'ready',
             'Ascent': 'ascent',
             'Descent': 'descent',
-            'Touch Down': 'touchdown'
+            'Touch Down': 'touchdown',
+            // Backend telemetry modes
+            'BOOT': 'pre-launch',
+            'TEST_MODE': 'calibration',
+            'LAUNCH_PAD': 'ready',
+            'ASCENT': 'ascent',
+            'ROCKET_DEPLOY': 'ascent',
+            'DESCENT': 'descent',
+            'AEROBRAKE_RELEASE': 'descent',
+            'IMPACT': 'touchdown',
+            'UNKNOWN': 'pre-launch'
         };
 
         // Remove active class from all phases
@@ -119,18 +133,20 @@ class Dashboard {
             if (phaseElement) {
                 phaseElement.classList.add('active');
             }
+        } else {
+            console.log(`Unknown mission phase: ${currentMode}`);
         }
     }
 
     applyStatusColors(data) {
-        // Battery status coloring
-        const batteryElement = document.getElementById('battery-percentage');
+        // Battery voltage status coloring (assuming typical LiPo 2S battery: 8.4V full, 6.0V empty)
+        const batteryElement = document.getElementById('battery-voltage');
         if (batteryElement) {
-            const battery = data.battery_percentage || 0;
+            const voltage = data.battery_voltage || 0;
             batteryElement.className = 'data-value';
-            if (battery > 50) {
+            if (voltage > 7.4) {
                 batteryElement.classList.add('good');
-            } else if (battery > 20) {
+            } else if (voltage > 6.6) {
                 batteryElement.classList.add('warning');
             } else {
                 batteryElement.classList.add('critical');
@@ -275,7 +291,6 @@ class Dashboard {
             'altitude-value': '0.00',
             'pressure-value': '0.00',
             'temperature-value': '0.0',
-            'battery-percentage': '100',
             'battery-voltage': '0.00',
             'speed-value': '0.00',
             'packet-count': '0',

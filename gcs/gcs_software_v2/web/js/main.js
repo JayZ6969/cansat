@@ -187,7 +187,7 @@ function generateDemoData() {
             y: (Math.random() - 0.5) * 2,
             z: 9.8 + (Math.random() - 0.5) * 2
         },
-        reaction_wheel: Array.from({length: 20}, () => Math.floor(Math.random() * 80) + 10),
+        reaction_wheel: (Math.random() - 0.5) * 400,  // PID output value (-200 to 200)
         mode: phases[phaseIndex],
         calibration_done: phaseIndex >= 1,
         parachute_deployed: phaseIndex >= 4,
@@ -459,32 +459,36 @@ function disconnectFromPort() {
 
 function updateConnectionStatus(status) {
     const connectBtn = document.getElementById('connect-btn');
-    const indicator = document.getElementById('connection-indicator');
-    const statusText = document.getElementById('connection-text');
     
-    if (!connectBtn || !indicator || !statusText) return;
+    console.log('updateConnectionStatus called with status:', status);
+    console.log('Button element:', connectBtn);
+    
+    if (!connectBtn) {
+        console.error('Connect button not found!');
+        return;
+    }
     
     // Remove all status classes
-    indicator.classList.remove('connected', 'connecting');
-    connectBtn.classList.remove('connected');
+    connectBtn.classList.remove('connected', 'connecting');
     
     if (status === 'connecting') {
-        indicator.classList.add('connecting');
-        statusText.textContent = 'Connecting...';
-        connectBtn.textContent = '⏳ CONNECTING';
+        console.log('Setting button to CONNECTING state');
+        connectBtn.classList.add('connecting');
+        connectBtn.innerHTML = '<span class="btn-icon">⏳</span><span class="btn-text">CONNECTING</span>';
         connectBtn.disabled = true;
     } else if (status === true) {
-        indicator.classList.add('connected');
-        statusText.textContent = 'Connected';
-        connectBtn.textContent = '📡 DISCONNECT';
+        console.log('Setting button to CONNECTED (DISCONNECT) state');
         connectBtn.classList.add('connected');
+        connectBtn.innerHTML = '<span class="btn-icon">🔌</span><span class="btn-text">DISCONNECT</span>';
         connectBtn.disabled = false;
         isConnected = true;
+        console.log('Button classes after connected:', connectBtn.className);
     } else {
-        statusText.textContent = 'Disconnected';
-        connectBtn.textContent = '📡 CONNECT';
+        console.log('Setting button to DISCONNECTED (CONNECT) state');
+        connectBtn.innerHTML = '<span class="btn-icon">📡</span><span class="btn-text">CONNECT</span>';
         connectBtn.disabled = false;
         isConnected = false;
+        console.log('Button classes after disconnected:', connectBtn.className);
     }
 }
 

@@ -35,18 +35,15 @@ class ChartsManager {
     createReactionWheelChart() {
         const ctx = document.getElementById('reactionWheelChart').getContext('2d');
         
-        // Generate initial data points for reaction wheel
-        const initialData = Array.from({length: 20}, () => Math.floor(Math.random() * 80) + 10);
-        
         this.charts.reactionWheel = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: Array.from({length: 20}, (_, i) => i),
+                labels: [],
                 datasets: [{
-                    label: 'Reaction Wheel',
-                    data: initialData,
+                    label: 'PID Output',
+                    data: [],
                     borderColor: this.chartColors.primary,
-                    backgroundColor: 'rgba(0, 188, 212, 0.1)',
+                    backgroundColor: 'rgba(136, 136, 136, 0.1)',
                     borderWidth: 2,
                     fill: true,
                     tension: 0.4,
@@ -64,14 +61,21 @@ class ChartsManager {
                 },
                 scales: {
                     x: {
-                        display: false,
+                        display: true,
                         grid: {
                             color: 'rgba(136, 136, 136, 0.2)' // border-color with opacity
+                        },
+                        ticks: {
+                            color: '#e0e0e0',
+                            font: {
+                                size: 10
+                            },
+                            maxTicksLimit: 10
                         }
                     },
                     y: {
-                        min: 0,
-                        max: 100,
+                        min: -255,
+                        max: 255,
                         grid: {
                             color: 'rgba(136, 136, 136, 0.2)' // border-color with opacity
                         },
@@ -378,9 +382,9 @@ class ChartsManager {
         const timeLabel = new Date(timestamp).toLocaleTimeString();
 
         if (chartName === 'reactionWheel') {
-            // Update reaction wheel with array data
-            chart.data.datasets[0].data = data.reaction_wheel || [];
-            chart.data.labels = Array.from({length: data.reaction_wheel?.length || 0}, (_, i) => i);
+            // Update reaction wheel with single PID output value
+            const value = data.reaction_wheel || 0;
+            this.addDataPoint(chart, timeLabel, [value]);
         } else if (chartName === 'gyroscope') {
             // Update gyroscope with x, y, z data
             this.addDataPoint(chart, timeLabel, [

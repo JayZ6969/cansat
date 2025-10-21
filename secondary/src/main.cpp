@@ -93,6 +93,7 @@ bool ledBlinkState = false;
 void initializeSensors();
 void initializeLoRa();
 void readLocalSensors();
+void readBattery();
 void sendDataToPrimary();
 void receiveFromPrimary();
 void transmitViaLoRa(String csvData);
@@ -271,9 +272,10 @@ void readLocalSensors()
 void readBattery()
 {
     int adcValue = analogRead(BATTERY_ADC_PIN);
-    // Convert ADC to voltage for 18650 x 2 with 3:1 voltage divider (100k:47k)
-    // ADC reading * (3.3V / 4095) * voltage_divider_ratio
-    voltage = (adcValue / 4095.0) * 3.3 * 3.14; // 3.14 = (100k+47k)/47k
+    // Convert ADC to voltage for 18650 x 2 with voltage divider
+    // ADC reading * (3.3V / 4095) * calibrated_multiplier
+    // Calibrated multiplier: 4.87 (adjusted to match actual battery voltage)
+    voltage = (adcValue / 4095.0) * 3.3 * 4.87;
 }
 
 void sendDataToPrimary()

@@ -168,10 +168,10 @@ class TelemetryHandler:
         Expected format: RX #XXX @ XXXXX ms | XXX bytes | RSSI=XX dB | SNR=X.X | CSV_DATA
         or just: CSV_DATA
         
-        CSV fields (23): TEAM_ID,TIMESTAMP,PACKET_COUNT,ALTITUDE,PRESSURE,TEMP,VOLTAGE,
-                        GNSS_TIME,GNSS_LAT,GNSS_LONG,GNSS_ALT,GNSS_SATS,
-                        ACCEL_X,ACCEL_Y,ACCEL_Z,GYRO_X,GYRO_Y,GYRO_Z,GYRO_SPIN_RATE,
-                        FLIGHT_STATE,SERVO_STATUS,ERROR_CODE,GNSS_SPEED
+        CSV fields (22): TEAM_ID,MISSION_TIME,PACKET_COUNT,ALTITUDE,PRESSURE,TEMP,VOLTAGE,
+                        GPS_TIME,GPS_LATITUDE,GPS_LONGITUDE,GPS_ALTITUDE,GPS_SATS,
+                        ACCEL_X,ACCEL_Y,ACCEL_Z,GYRO_X,GYRO_Y,GYRO_Z,PID_OUTPUT,
+                        STATE,SERVO,ERROR_CODE,GNSS_SPEED
         """
         try:
             # Extract CSV data from the line (after the last '|' if present)
@@ -184,31 +184,31 @@ class TelemetryHandler:
             # Now parse the CSV data
             fields = csv_data.strip().split(',')
             
-            if len(fields) >= 23:
+            if len(fields) >= 22:
                 parsed_data = {
                     'team_id': fields[0].strip(),
-                    'timestamp': fields[1].strip(),
+                    'timestamp': fields[1].strip(),  # MISSION_TIME
                     'packet_count': int(fields[2]) if self._is_number(fields[2]) else 0,
                     'altitude': float(fields[3]) if self._is_float(fields[3]) else 0.0,
                     'pressure': float(fields[4]) if self._is_float(fields[4]) else 0.0,
                     'temperature': float(fields[5]) if self._is_float(fields[5]) else 0.0,
                     'voltage': float(fields[6]) if self._is_float(fields[6]) else 0.0,
-                    'gnss_time': fields[7].strip(),
-                    'gnss_lat': float(fields[8]) if self._is_float(fields[8]) else 0.0,
-                    'gnss_long': float(fields[9]) if self._is_float(fields[9]) else 0.0,
-                    'gnss_alt': float(fields[10]) if self._is_float(fields[10]) else 0.0,
-                    'gnss_sats': int(fields[11]) if self._is_number(fields[11]) else 0,
+                    'gnss_time': fields[7].strip(),  # GPS_TIME
+                    'gnss_lat': float(fields[8]) if self._is_float(fields[8]) else 0.0,  # GPS_LATITUDE
+                    'gnss_long': float(fields[9]) if self._is_float(fields[9]) else 0.0,  # GPS_LONGITUDE
+                    'gnss_alt': float(fields[10]) if self._is_float(fields[10]) else 0.0,  # GPS_ALTITUDE
+                    'gnss_sats': int(fields[11]) if self._is_number(fields[11]) else 0,  # GPS_SATS
                     'accel_x': float(fields[12]) if self._is_float(fields[12]) else 0.0,
                     'accel_y': float(fields[13]) if self._is_float(fields[13]) else 0.0,
                     'accel_z': float(fields[14]) if self._is_float(fields[14]) else 0.0,
                     'gyro_x': float(fields[15]) if self._is_float(fields[15]) else 0.0,
                     'gyro_y': float(fields[16]) if self._is_float(fields[16]) else 0.0,
                     'gyro_z': float(fields[17]) if self._is_float(fields[17]) else 0.0,
-                    'gyro_spin_rate': float(fields[18]) if self._is_float(fields[18]) else 0.0,
-                    'flight_state': int(fields[19]) if self._is_number(fields[19]) else 0,
-                    'servo_status': fields[20].strip(),
+                    'pid_output': float(fields[18]) if self._is_float(fields[18]) else 0.0,  # PID_OUTPUT for reaction wheel
+                    'flight_state': int(fields[19]) if self._is_number(fields[19]) else 0,  # STATE
+                    'servo_status': fields[20].strip(),  # SERVO
                     'error_code': int(fields[21]) if self._is_number(fields[21]) else 0,
-                    'gnss_speed': float(fields[22]) if self._is_float(fields[22]) else 0.0
+                    'gnss_speed': float(fields[22]) if len(fields) > 22 and self._is_float(fields[22]) else 0.0
                 }
                 
                 # Extract RSSI and SNR if present in the original string
@@ -245,6 +245,10 @@ class TelemetryHandler:
                     'y': parsed_data['accel_y'],
                     'z': parsed_data['accel_z']
                 }
+                
+                # Add reaction wheel data (PID output for chart)
+                # Store as single value for time-series plotting
+                parsed_data['reaction_wheel'] = parsed_data['pid_output']
                 
                 # Add mission time (convert timestamp to seconds if it's a number)
                 try:

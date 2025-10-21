@@ -31,19 +31,44 @@
             <h2 id="mission-id">2024-ASI-CANSAT-049</h2>
           </div>
         </div>
-        <div class="status-indicators">
-          <div class="status-item">
-            <span class="status-label">Camera Recording</span>
-            <span class="status-value" id="camera-status">Done</span>
+
+        <!-- COM Port Controls in Header -->
+        <div class="header-controls">
+          <div class="header-com-port">
+            <label for="com-port-select" class="header-label">COM Port</label>
+            <div class="header-port-controls">
+              <select id="com-port-select" class="com-port-dropdown">
+                <option value="">Select COM Port...</option>
+              </select>
+              <button
+                class="control-btn scan-ports"
+                onclick="scanComPorts()"
+                title="Refresh COM ports"
+              >
+                🔄
+              </button>
+            </div>
           </div>
-          <div class="status-item">
-            <span class="status-label">Parachute Deployed</span>
-            <span class="status-value" id="parachute-status">Mode</span>
+
+          <div class="header-baud-rate">
+            <label for="baud-rate-select" class="header-label">Baud Rate</label>
+            <select id="baud-rate-select" class="baud-rate-dropdown">
+              <option value="9600">9600</option>
+              <option value="19200">19200</option>
+              <option value="38400">38400</option>
+              <option value="57600">57600</option>
+              <option value="115200">115200</option>
+            </select>
           </div>
-          <div class="status-item">
-            <span class="status-label">Calibration</span>
-            <span class="status-value" id="calibration-status">Decent</span>
-          </div>
+
+          <button
+            class="control-btn connect header-connect-btn"
+            id="connect-btn"
+            onclick="toggleConnection()"
+          >
+            <span class="btn-icon">📡</span>
+            <span class="btn-text">CONNECT</span>
+          </button>
         </div>
       </header>
 
@@ -56,63 +81,6 @@
           </div>
 
           <div class="control-panel">
-            <!-- COM Port Selection -->
-            <div class="com-port-section">
-              <h4 class="controls-section-title">Connection Settings</h4>
-              <div class="com-port-grid">
-                <div class="com-port-row">
-                  <label for="com-port-select" class="com-port-label"
-                    >COM Port:</label
-                  >
-                  <div class="com-port-controls">
-                    <select id="com-port-select" class="com-port-dropdown">
-                      <option value="">Select COM Port...</option>
-                    </select>
-                    <button
-                      class="control-btn scan-ports"
-                      onclick="scanComPorts()"
-                      title="Refresh COM ports"
-                    >
-                      🔄
-                    </button>
-                  </div>
-                </div>
-                <div class="com-port-row">
-                  <label for="baud-rate-select" class="baud-rate-label"
-                    >Baud Rate:</label
-                  >
-                  <select id="baud-rate-select" class="baud-rate-dropdown">
-                    <option value="9600">9600</option>
-                    <option value="19200">19200</option>
-                    <option value="38400">38400</option>
-                    <option value="57600">57600</option>
-                    <option value="115200">115200</option>
-                  </select>
-                </div>
-                <div class="com-port-row full-width">
-                  <button
-                    class="control-btn connect"
-                    id="connect-btn"
-                    onclick="toggleConnection()"
-                  >
-                    <span class="btn-icon">📡</span>
-                    <span class="btn-text">CONNECT</span>
-                  </button>
-                </div>
-                <div class="com-port-row full-width">
-                  <div class="connection-status" id="connection-status">
-                    <span
-                      class="status-indicator"
-                      id="connection-indicator"
-                    ></span>
-                    <span class="status-text" id="connection-text"
-                      >Disconnected</span
-                    >
-                  </div>
-                </div>
-              </div>
-            </div>
-
             <!-- Mission Controls -->
             <div class="mission-controls">
               <h4 class="controls-section-title">Mission Operations</h4>
@@ -163,7 +131,7 @@
               <div class="chart-card primary-chart">
                 <div class="chart-header">
                   <div class="chart-icon">⚙️</div>
-                  <h3>Reaction Wheel</h3>
+                  <h3>Reaction Wheel PID</h3>
                   <div class="chart-status">
                     <span class="status-dot active"></span>
                   </div>
@@ -327,18 +295,14 @@
               </div>
 
               <div class="data-item">
-                <span class="data-label">Battery Percentage (%)</span>
-                <span class="data-value" id="battery-percentage">95</span>
-              </div>
-              <div class="data-item">
                 <span class="data-label">Battery Voltage (V)</span>
                 <span class="data-value" id="battery-voltage">8.30</span>
               </div>
-
               <div class="data-item">
                 <span class="data-label">Altitude (m)</span>
                 <span class="data-value" id="altitude-value">939.86</span>
               </div>
+
               <div class="data-item">
                 <span class="data-label">Pressure (pa)</span>
                 <span class="data-value" id="pressure-value">913.88</span>
