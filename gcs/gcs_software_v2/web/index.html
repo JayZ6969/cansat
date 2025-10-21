@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AVINYA - Ground Control Station</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="css/style.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -52,126 +58,238 @@
           <div class="control-panel">
             <!-- COM Port Selection -->
             <div class="com-port-section">
-              <label for="com-port-select" class="com-port-label"
-                >COM Port:</label
-              >
-              <div class="com-port-controls">
-                <select id="com-port-select" class="com-port-dropdown">
-                  <option value="">Select COM Port...</option>
-                </select>
-                <button
-                  class="control-btn scan-ports"
-                  onclick="scanComPorts()"
-                  title="Refresh COM ports"
-                >
-                  🔄
-                </button>
-              </div>
-              <div class="baud-rate-section">
-                <label for="baud-rate-select" class="baud-rate-label"
-                  >Baud Rate:</label
-                >
-                <select id="baud-rate-select" class="baud-rate-dropdown">
-                  <option value="9600">9600</option>
-                  <option value="19200">19200</option>
-                  <option value="38400">38400</option>
-                  <option value="57600">57600</option>
-                  <option value="115200">115200</option>
-                </select>
-              </div>
-              <button
-                class="control-btn connect"
-                id="connect-btn"
-                onclick="toggleConnection()"
-              >
-                📡 CONNECT
-              </button>
-              <div class="connection-status" id="connection-status">
-                <span class="status-indicator" id="connection-indicator"></span>
-                <span class="status-text" id="connection-text"
-                  >Disconnected</span
-                >
+              <h4 class="controls-section-title">Connection Settings</h4>
+              <div class="com-port-grid">
+                <div class="com-port-row">
+                  <label for="com-port-select" class="com-port-label"
+                    >COM Port:</label
+                  >
+                  <div class="com-port-controls">
+                    <select id="com-port-select" class="com-port-dropdown">
+                      <option value="">Select COM Port...</option>
+                    </select>
+                    <button
+                      class="control-btn scan-ports"
+                      onclick="scanComPorts()"
+                      title="Refresh COM ports"
+                    >
+                      🔄
+                    </button>
+                  </div>
+                </div>
+                <div class="com-port-row">
+                  <label for="baud-rate-select" class="baud-rate-label"
+                    >Baud Rate:</label
+                  >
+                  <select id="baud-rate-select" class="baud-rate-dropdown">
+                    <option value="9600">9600</option>
+                    <option value="19200">19200</option>
+                    <option value="38400">38400</option>
+                    <option value="57600">57600</option>
+                    <option value="115200">115200</option>
+                  </select>
+                </div>
+                <div class="com-port-row full-width">
+                  <button
+                    class="control-btn connect"
+                    id="connect-btn"
+                    onclick="toggleConnection()"
+                  >
+                    <span class="btn-icon">📡</span>
+                    <span class="btn-text">CONNECT</span>
+                  </button>
+                </div>
+                <div class="com-port-row full-width">
+                  <div class="connection-status" id="connection-status">
+                    <span
+                      class="status-indicator"
+                      id="connection-indicator"
+                    ></span>
+                    <span class="status-text" id="connection-text"
+                      >Disconnected</span
+                    >
+                  </div>
+                </div>
               </div>
             </div>
 
             <!-- Mission Controls -->
             <div class="mission-controls">
-              <button
-                class="control-btn start-stop"
-                id="start-stop-btn"
-                onclick="toggleMission()"
-                disabled
-              >
-                🟢 START / STOP PLOTTING
-              </button>
-              <button class="control-btn telemetry" onclick="toggleTelemetry()">
-                📊 TELEMETRY
-              </button>
-              <button
-                class="control-btn calibration"
-                onclick="calibrateSensors()"
-              >
-                🔧 CALIBRATION
-              </button>
-              <button class="control-btn reset" onclick="resetDashboard()">
-                🔄 RESET DASHBOARD
-              </button>
+              <h4 class="controls-section-title">Mission Operations</h4>
+              <div class="controls-grid">
+                <div class="control-group primary-controls">
+                  <button
+                    class="control-btn start-stop"
+                    id="start-stop-btn"
+                    onclick="toggleMission()"
+                    disabled
+                  >
+                    <span class="btn-icon">🟢</span>
+                    <span class="btn-text">START / STOP</span>
+                  </button>
+                  <button
+                    class="control-btn telemetry"
+                    onclick="toggleTelemetry()"
+                  >
+                    <span class="btn-icon">📊</span>
+                    <span class="btn-text">TELEMETRY</span>
+                  </button>
+                </div>
+                <div class="control-group secondary-controls">
+                  <button
+                    class="control-btn calibration"
+                    onclick="calibrateSensors()"
+                  >
+                    <span class="btn-icon">🔧</span>
+                    <span class="btn-text">CALIBRATION</span>
+                  </button>
+                  <button class="control-btn reset" onclick="resetDashboard()">
+                    <span class="btn-icon">🔄</span>
+                    <span class="btn-text">RESET</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- Center Panel - Charts -->
         <div class="center-panel">
-          <!-- Reaction Wheel Chart -->
-          <div class="chart-container reaction-wheel">
-            <h3>Reaction wheel</h3>
-            <canvas id="reactionWheelChart"></canvas>
-          </div>
+          <!-- Main Charts Grid -->
+          <div class="charts-main-grid">
+            <!-- Primary Charts Row -->
+            <div class="charts-primary-row">
+              <!-- Reaction Wheel Chart -->
+              <div class="chart-card primary-chart">
+                <div class="chart-header">
+                  <div class="chart-icon">⚙️</div>
+                  <h3>Reaction Wheel</h3>
+                  <div class="chart-status">
+                    <span class="status-dot active"></span>
+                  </div>
+                </div>
+                <div class="chart-content">
+                  <canvas id="reactionWheelChart"></canvas>
+                </div>
+              </div>
 
-          <!-- Gyroscope Chart -->
-          <div class="chart-container gyroscope">
-            <h3>Gyroscope</h3>
-            <canvas id="gyroscopeChart"></canvas>
-            <div class="axis-labels">
-              <span class="axis-x">🔴 X</span>
-              <span class="axis-y">🟡 Y</span>
-              <span class="axis-z">🔵 Z</span>
+              <!-- Gyroscope Chart -->
+              <div class="chart-card primary-chart">
+                <div class="chart-header">
+                  <div class="chart-icon">🌀</div>
+                  <h3>Gyroscope</h3>
+                  <div class="chart-status">
+                    <span class="status-dot active"></span>
+                  </div>
+                </div>
+                <div class="chart-content">
+                  <canvas id="gyroscopeChart"></canvas>
+                  <div class="axis-legend">
+                    <span class="axis-label x-axis">X</span>
+                    <span class="axis-label y-axis">Y</span>
+                    <span class="axis-label z-axis">Z</span>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <!-- Environmental Charts Row -->
-          <div class="charts-row">
-            <div class="chart-container small">
-              <h4>Altitude (m)</h4>
-              <canvas id="altitudeChart"></canvas>
-            </div>
-            <div class="chart-container small">
-              <h4>Pressure (Pa)</h4>
-              <canvas id="pressureChart"></canvas>
-            </div>
-            <div class="chart-container small">
-              <h4>Temperature (°C)</h4>
-              <canvas id="temperatureChart"></canvas>
-            </div>
-            <div class="chart-container small">
-              <h4>Accelerometer</h4>
-              <canvas id="accelerometerChart"></canvas>
-              <div class="accel-labels">
-                <span>🔴 X 🟡 Y 🔵 Z</span>
+            <!-- Secondary Charts Grid -->
+            <div class="charts-secondary-grid">
+              <!-- Altitude Chart -->
+              <div class="chart-card secondary-chart">
+                <div class="chart-header mini">
+                  <div class="chart-icon small">📈</div>
+                  <h4>Altitude</h4>
+                </div>
+                <div class="chart-content mini">
+                  <canvas id="altitudeChart"></canvas>
+                  <div class="chart-value">
+                    <span class="value" id="altitude-display">939.86</span>
+                    <span class="unit">m</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Pressure Chart -->
+              <div class="chart-card secondary-chart">
+                <div class="chart-header mini">
+                  <div class="chart-icon small">🌡️</div>
+                  <h4>Pressure</h4>
+                </div>
+                <div class="chart-content mini">
+                  <canvas id="pressureChart"></canvas>
+                  <div class="chart-value">
+                    <span class="value" id="pressure-display">913.88</span>
+                    <span class="unit">Pa</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Temperature Chart -->
+              <div class="chart-card secondary-chart">
+                <div class="chart-header mini">
+                  <div class="chart-icon small">🔥</div>
+                  <h4>Temperature</h4>
+                </div>
+                <div class="chart-content mini">
+                  <canvas id="temperatureChart"></canvas>
+                  <div class="chart-value">
+                    <span class="value" id="temperature-display">27.7</span>
+                    <span class="unit">°C</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Accelerometer Chart -->
+              <div class="chart-card secondary-chart">
+                <div class="chart-header mini">
+                  <div class="chart-icon small">📊</div>
+                  <h4>Accelerometer</h4>
+                </div>
+                <div class="chart-content mini">
+                  <canvas id="accelerometerChart"></canvas>
+                  <div class="axis-legend mini">
+                    <span class="axis-label x-axis">X</span>
+                    <span class="axis-label y-axis">Y</span>
+                    <span class="axis-label z-axis">Z</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
           <!-- Mission Phase Indicator -->
           <div class="phase-indicator">
-            <div class="phase-item active" data-phase="pre-launch">
-              Pre Launch
+            <div class="phase-title">
+              <span class="phase-icon">🚀</span>
+              <h3>Mission Phase</h3>
             </div>
-            <div class="phase-item" data-phase="calibration">Calibration</div>
-            <div class="phase-item" data-phase="ready">Ready to Launch</div>
-            <div class="phase-item" data-phase="ascent">Ascent</div>
-            <div class="phase-item" data-phase="descent">Descent</div>
-            <div class="phase-item" data-phase="touchdown">Touch Down</div>
+            <div class="phase-timeline">
+              <div class="phase-item active" data-phase="pre-launch">
+                <div class="phase-dot"></div>
+                <span class="phase-label">Pre Launch</span>
+              </div>
+              <div class="phase-item" data-phase="calibration">
+                <div class="phase-dot"></div>
+                <span class="phase-label">Calibration</span>
+              </div>
+              <div class="phase-item" data-phase="ready">
+                <div class="phase-dot"></div>
+                <span class="phase-label">Ready</span>
+              </div>
+              <div class="phase-item" data-phase="ascent">
+                <div class="phase-dot"></div>
+                <span class="phase-label">Ascent</span>
+              </div>
+              <div class="phase-item" data-phase="descent">
+                <div class="phase-dot"></div>
+                <span class="phase-label">Descent</span>
+              </div>
+              <div class="phase-item" data-phase="touchdown">
+                <div class="phase-dot"></div>
+                <span class="phase-label">Touch Down</span>
+              </div>
+            </div>
           </div>
         </div>
 

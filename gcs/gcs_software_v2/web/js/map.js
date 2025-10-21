@@ -21,8 +21,8 @@ class MapManager {
                 attributionControl: false
             }).setView(this.defaultLocation, 13);
 
-            // Add dark tile layer to match the dashboard theme
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            // Add light tile layer for contrast with dark dashboard theme
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
                 attribution: '© OpenStreetMap © CartoDB',
                 subdomains: 'abcd',
                 maxZoom: 19
@@ -235,12 +235,12 @@ class MapManager {
             case 'satellite':
                 tileUrl = 'https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}';
                 break;
-            case 'light':
-                tileUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-                break;
             case 'dark':
-            default:
                 tileUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+                break;
+            case 'light':
+            default:
+                tileUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
                 break;
         }
 

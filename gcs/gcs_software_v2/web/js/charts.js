@@ -7,22 +7,22 @@ class ChartsManager {
         this.charts = {};
         this.maxDataPoints = 50;
         this.chartColors = {
-            primary: '#00bcd4',
-            secondary: '#4fc3f7',
-            success: '#4caf50',
-            warning: '#ff9800',
-            error: '#f44336',
-            x_axis: '#f44336',
-            y_axis: '#ffeb3b',
-            z_axis: '#2196f3'
+            primary: '#888888', // cyber-cyan (grey)
+            secondary: '#666666', // plasma-pink (dark grey)
+            success: '#00ff88', // success-green
+            warning: '#ffaa00', // warning-orange
+            error: '#ff4444', // alert-red
+            x_axis: '#ff4444', // alert-red
+            y_axis: '#aaaaaa', // galaxy-gold (light grey)
+            z_axis: '#888888' // cyber-cyan (grey)
         };
         this.initializeCharts();
     }
 
     initializeCharts() {
         // Set Chart.js global defaults
-        Chart.defaults.color = '#ffffff';
-        Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
+        Chart.defaults.color = '#e0e0e0'; // text-primary
+        Chart.defaults.borderColor = 'rgba(136, 136, 136, 0.3)'; // border-color with opacity
         
         this.createReactionWheelChart();
         this.createGyroscopeChart();
@@ -66,17 +66,17 @@ class ChartsManager {
                     x: {
                         display: false,
                         grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
+                            color: 'rgba(136, 136, 136, 0.2)' // border-color with opacity
                         }
                     },
                     y: {
                         min: 0,
                         max: 100,
                         grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
+                            color: 'rgba(136, 136, 136, 0.2)' // border-color with opacity
                         },
                         ticks: {
-                            color: '#ffffff',
+                            color: '#e0e0e0', // text-primary
                             font: {
                                 size: 10
                             }
@@ -102,7 +102,7 @@ class ChartsManager {
                         label: 'X',
                         data: [],
                         borderColor: this.chartColors.x_axis,
-                        backgroundColor: 'rgba(244, 67, 54, 0.1)',
+                        backgroundColor: 'rgba(255, 68, 68, 0.1)',
                         borderWidth: 2,
                         fill: false,
                         tension: 0.4,
@@ -112,7 +112,7 @@ class ChartsManager {
                         label: 'Y',
                         data: [],
                         borderColor: this.chartColors.y_axis,
-                        backgroundColor: 'rgba(255, 235, 59, 0.1)',
+                        backgroundColor: 'rgba(255, 215, 0, 0.1)',
                         borderWidth: 2,
                         fill: false,
                         tension: 0.4,
@@ -122,7 +122,7 @@ class ChartsManager {
                         label: 'Z',
                         data: [],
                         borderColor: this.chartColors.z_axis,
-                        backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                        backgroundColor: 'rgba(136, 136, 136, 0.1)',
                         borderWidth: 2,
                         fill: false,
                         tension: 0.4,
@@ -142,17 +142,17 @@ class ChartsManager {
                     x: {
                         display: false,
                         grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
+                            color: 'rgba(136, 136, 136, 0.2)' // border-color with opacity
                         }
                     },
                     y: {
                         min: -3,
                         max: 3,
                         grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
+                            color: 'rgba(136, 136, 136, 0.2)' // border-color with opacity
                         },
                         ticks: {
-                            color: '#ffffff',
+                            color: '#e0e0e0', // text-primary
                             font: {
                                 size: 10
                             }
@@ -174,7 +174,7 @@ class ChartsManager {
                     label: 'Altitude',
                     data: [],
                     borderColor: this.chartColors.primary,
-                    backgroundColor: 'rgba(0, 188, 212, 0.2)',
+                    backgroundColor: 'rgba(136, 136, 136, 0.2)',
                     borderWidth: 2,
                     fill: true,
                     tension: 0.4,
@@ -195,10 +195,10 @@ class ChartsManager {
                     },
                     y: {
                         grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
+                            color: 'rgba(136, 136, 136, 0.2)' // border-color with opacity
                         },
                         ticks: {
-                            color: '#ffffff',
+                            color: '#e0e0e0', // text-primary
                             font: {
                                 size: 9
                             }
@@ -220,7 +220,7 @@ class ChartsManager {
                     label: 'Pressure',
                     data: [],
                     borderColor: this.chartColors.secondary,
-                    backgroundColor: 'rgba(79, 195, 247, 0.2)',
+                    backgroundColor: 'rgba(255, 0, 128, 0.2)',
                     borderWidth: 2,
                     fill: true,
                     tension: 0.4,
@@ -241,10 +241,10 @@ class ChartsManager {
                     },
                     y: {
                         grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
+                            color: 'rgba(136, 136, 136, 0.2)' // border-color with opacity
                         },
                         ticks: {
-                            color: '#ffffff',
+                            color: '#e0e0e0', // text-primary
                             font: {
                                 size: 9
                             }
@@ -266,7 +266,7 @@ class ChartsManager {
                     label: 'Temperature',
                     data: [],
                     borderColor: this.chartColors.warning,
-                    backgroundColor: 'rgba(255, 152, 0, 0.2)',
+                    backgroundColor: 'rgba(255, 170, 0, 0.2)',
                     borderWidth: 2,
                     fill: true,
                     tension: 0.4,
@@ -287,10 +287,10 @@ class ChartsManager {
                     },
                     y: {
                         grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
+                            color: 'rgba(136, 136, 136, 0.2)' // border-color with opacity
                         },
                         ticks: {
-                            color: '#ffffff',
+                            color: '#e0e0e0', // text-primary
                             font: {
                                 size: 9
                             }
@@ -313,7 +313,7 @@ class ChartsManager {
                         label: 'X',
                         data: [],
                         borderColor: this.chartColors.x_axis,
-                        backgroundColor: 'rgba(244, 67, 54, 0.1)',
+                        backgroundColor: 'rgba(255, 68, 68, 0.1)',
                         borderWidth: 1.5,
                         fill: false,
                         tension: 0.4,
@@ -323,7 +323,7 @@ class ChartsManager {
                         label: 'Y',
                         data: [],
                         borderColor: this.chartColors.y_axis,
-                        backgroundColor: 'rgba(255, 235, 59, 0.1)',
+                        backgroundColor: 'rgba(255, 215, 0, 0.1)',
                         borderWidth: 1.5,
                         fill: false,
                         tension: 0.4,
@@ -333,7 +333,7 @@ class ChartsManager {
                         label: 'Z',
                         data: [],
                         borderColor: this.chartColors.z_axis,
-                        backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                        backgroundColor: 'rgba(136, 136, 136, 0.1)',
                         borderWidth: 1.5,
                         fill: false,
                         tension: 0.4,
@@ -357,10 +357,10 @@ class ChartsManager {
                         min: -2,
                         max: 12,
                         grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
+                            color: 'rgba(136, 136, 136, 0.2)' // border-color with opacity
                         },
                         ticks: {
-                            color: '#ffffff',
+                            color: '#e0e0e0', // text-primary
                             font: {
                                 size: 9
                             }

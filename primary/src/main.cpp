@@ -585,8 +585,8 @@ String createCSVRow()
   csvRow += String(primaryData.gyroSpinRate, 3) + ",";
   csvRow += String(currentState) + ",";
 
-  // Separate columns for servo status and GNSS speed
-  String servoStatus = servoOpen ? "OPEN" : "CLOSED";
+  // Servo status: 0 = closed, 1 = open
+  String servoStatus = servoOpen ? "1" : "0";
 
   csvRow += servoStatus + ",";
 
@@ -629,8 +629,8 @@ void updateFlightState()
     break;
 
   case TEST_MODE:
-    // Transition to LAUNCH_PAD when sensors are stable and GPS is locked
-    if (sensorsOK && gpsLocked && currentAltitude < 100)
+    // Transition to LAUNCH_PAD when sensors are stable (GPS lock not required)
+    if (sensorsOK && currentAltitude < 100)
     {
       currentState = LAUNCH_PAD;
     }

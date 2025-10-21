@@ -27,8 +27,11 @@ class Dashboard {
         this.updateElement('mission-time', this.formatTime(data.mission_time || 0));
         this.updateElement('mission-time-sec', data.mission_time || 0);
         this.updateElement('altitude-value', this.formatNumber(data.altitude, 2));
+        this.updateElement('altitude-display', this.formatNumber(data.altitude, 2));
         this.updateElement('pressure-value', this.formatNumber(data.pressure, 2));
+        this.updateElement('pressure-display', this.formatNumber(data.pressure, 2));
         this.updateElement('temperature-value', this.formatNumber(data.temperature, 1));
+        this.updateElement('temperature-display', this.formatNumber(data.temperature, 1));
         this.updateElement('battery-percentage', data.battery_percentage || 0);
         this.updateElement('battery-voltage', this.formatNumber(data.battery_voltage, 2));
         this.updateElement('speed-value', this.formatNumber(data.speed, 2));
