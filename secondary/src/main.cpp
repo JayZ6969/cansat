@@ -121,7 +121,8 @@ void setup()
     bootTime = millis();
     lastPrimaryData = millis();
 
-    Serial.println("=== SECONDARY ESP32 INITIALIZING ===");
+    Serial.println("\n[SECONDARY] CanSat Communication Module");
+    Serial.println("========================================");
 
     // Initialize all systems
     initializeSensors();
@@ -131,7 +132,8 @@ void setup()
     // Initialization complete - turn OFF D2
     digitalWrite(LED_D2, LOW);
 
-    Serial.println("=== SECONDARY ESP32 READY ===");
+    Serial.println("[INIT] Secondary ESP32 ready");
+    Serial.println("========================================\n");
 }
 
 void loop()
@@ -152,13 +154,30 @@ void loop()
     // Update LED status indicators
     updateLEDs();
 
+    // Periodic status output (every 5 seconds)
+    static unsigned long lastStatusPrint = 0;
+    if (millis() - lastStatusPrint >= 5000)
+    {
+        Serial.print("[STATUS] ALT:");
+        Serial.print(altitude, 1);
+        Serial.print("m | TEMP:");
+        Serial.print(temperature, 1);
+        Serial.print("C | VOLT:");
+        Serial.print(voltage, 2);
+        Serial.print("V | LoRa:");
+        Serial.print(loraError ? "ERR" : "OK");
+        Serial.print(" | BMP390:");
+        Serial.println(bmp390Error ? "ERR" : "OK");
+        lastStatusPrint = millis();
+    }
+
     // Minimal delay - OPTIMIZED FOR MAXIMUM SPEED
     delay(1);
 }
 
 void initializeSensors()
 {
-    Serial.print("Initializing BMP390...");
+    Serial.print("[INIT] BMP390 sensor...");
 
     if (bmp390.begin_I2C(BMP390_I2C_ADDR))
     {
@@ -169,19 +188,19 @@ void initializeSensors()
         bmp390.setOutputDataRate(BMP3_ODR_50_HZ);
 
         sensorsInitialized = true;
-        Serial.println(" SUCCESS");
+        Serial.println(" OK");
     }
     else
     {
         sensorsInitialized = false;
+        bmp390Error = true;
         Serial.println(" FAILED");
-        // Continue operation even if sensor fails
     }
 }
 
 void initializeLoRa()
 {
-    Serial.print("Initializing LoRa SX1278...");
+    Serial.print("[INIT] LoRa SX1278 (435MHz)...");
 
     // Initialize SPI for LoRa
     SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_SS);
@@ -199,11 +218,12 @@ void initializeLoRa()
         LoRa.enableCrc();               // Enable CRC for error detection
 
         loraInitialized = true;
-        Serial.println(" SUCCESS - OPTIMIZED FOR SPEED");
+        Serial.println(" OK (SF7, 250kHz)");
     }
     else
     {
         loraInitialized = false;
+        loraError = true;
         Serial.println(" FAILED");
     }
 }
@@ -213,10 +233,11 @@ void calibrateBaseline()
     if (!sensorsInitialized)
     {
         baselineAltitude = 0.0;
+        Serial.println("[WARN] BMP390 not ready - skipping baseline");
         return;
     }
 
-    Serial.print("Calibrating baseline altitude...");
+    Serial.print("[INIT] Calibrating baseline...");
 
     float altSum = 0.0;
     int validReadings = 0;
@@ -235,12 +256,14 @@ void calibrateBaseline()
     if (validReadings > 25)
     {
         baselineAltitude = altSum / validReadings;
-        Serial.println(" SUCCESS (" + String(baselineAltitude, 1) + "m)");
+        Serial.print(" OK (");
+        Serial.print(String(baselineAltitude, 1));
+        Serial.println(" m)");
     }
     else
     {
         baselineAltitude = 0.0;
-        Serial.println(" FAILED (insufficient readings)");
+        Serial.println(" FAILED");
     }
 }
 
@@ -294,8 +317,8 @@ void sendDataToPrimary()
 
     primarySerial.println(sensorData);
 
-    // Debug output
-    Serial.println("Sent to Primary: " + sensorData);
+    // Debug output removed for cleaner serial monitor
+    // Serial.println("[TX] Data sent to Primary");
 }
 
 void receiveFromPrimary()
@@ -318,19 +341,16 @@ void receiveFromPrimary()
                 // Transmit the CSV data via LoRa
                 transmitViaLoRa(csvData);
 
-                Serial.println("Received CSV from Primary: " + csvData);
+                // Serial.println("[RX] CSV from Primary"); // Debug disabled
             }
             else if (receivedData.equals("REQ_DATA"))
             {
                 // Primary is requesting fresh sensor data
                 readLocalSensors();  // Get latest sensor readings
                 sendDataToPrimary(); // Send immediate response
-                Serial.println("Data request from Primary - sending fresh data");
+                // Serial.println("[RX] Data request"); // Debug disabled
             }
-            else
-            {
-                Serial.println("Received from Primary: " + receivedData);
-            }
+            // else: Unknown command - ignore silently
         }
     }
 }
@@ -340,11 +360,13 @@ void transmitViaLoRa(String csvData)
     if (!loraInitialized)
     {
         loraTransmissionFailed = true;
-        Serial.println("LoRa transmission failed: LoRa not initialized");
+        loraError = true;
+        Serial.println("[ERROR] LoRa not initialized");
         return;
     }
 
-    Serial.print("TX LoRa: ");
+    // Print the CSV data being transmitted (matching Primary format)
+    Serial.println("CSV:" + csvData);
 
     // Begin LoRa packet - OPTIMIZED FOR SPEED
     if (LoRa.beginPacket())
@@ -355,18 +377,21 @@ void transmitViaLoRa(String csvData)
         if (LoRa.endPacket(true)) // true = async/non-blocking
         {
             loraTransmissionFailed = false;
-            Serial.println("SUCCESS");
+            loraError = false;
+            // Serial.println("[TX] LoRa OK"); // Debug disabled for cleaner output
         }
         else
         {
             loraTransmissionFailed = true;
-            Serial.println("FAILED (endPacket failed)");
+            loraError = true;
+            Serial.println("[ERROR] LoRa TX failed (endPacket)");
         }
     }
     else
     {
         loraTransmissionFailed = true;
-        Serial.println("FAILED (beginPacket failed)");
+        loraError = true;
+        Serial.println("[ERROR] LoRa TX failed (beginPacket)");
     }
 }
 
