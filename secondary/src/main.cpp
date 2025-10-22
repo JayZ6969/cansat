@@ -66,6 +66,7 @@ bool loraInitialized = false;
 unsigned long bootTime = 0;
 unsigned long lastSensorRead = 0;
 unsigned long lastPrimaryData = 0;
+unsigned long lastVoltageRead = 0; // Track last voltage reading time
 
 // Local Sensor Data
 float temperature = 0.0;
@@ -120,6 +121,7 @@ void setup()
 
     bootTime = millis();
     lastPrimaryData = millis();
+    lastVoltageRead = millis(); // Initialize to allow immediate first read
 
     Serial.println("\n[SECONDARY] CanSat Communication Module");
     Serial.println("========================================");
@@ -294,11 +296,17 @@ void readLocalSensors()
 
 void readBattery()
 {
-    int adcValue = analogRead(BATTERY_ADC_PIN);
-    // Convert ADC to voltage for 18650 x 2 with voltage divider
-    // ADC reading * (3.3V / 4095) * calibrated_multiplier
-    // Calibrated multiplier: 4.87 (adjusted to match actual battery voltage)
-    voltage = (adcValue / 4095.0) * 3.3 * 4.87;
+    // Only update voltage once per minute to reduce fluctuations
+    if (millis() - lastVoltageRead >= 60000) // 60 seconds
+    {
+        int adcValue = analogRead(BATTERY_ADC_PIN);
+        // Convert ADC to voltage for 18650 x 2 with voltage divider
+        // ADC reading * (3.3V / 4095) * calibrated_multiplier
+        // Calibrated multiplier: 5.33 (adjusted to match actual battery voltage)
+        voltage = (adcValue / 4095.0) * 3.3 * 5.33;
+        lastVoltageRead = millis();
+    }
+    // Else, keep the previous voltage value
 }
 
 void sendDataToPrimary()
