@@ -21,6 +21,7 @@ class TelemetryHandler:
         self.stop_reading = False
         self.latest_packet = None
         self.buffer = ""
+        self.log_messages = []  # Queue for storing log messages
         
         # Telemetry data template (23 fields)
         self.telemetry_template = {
@@ -102,15 +103,15 @@ class TelemetryHandler:
             self.reading_thread = threading.Thread(target=self._read_serial_data, daemon=True)
             self.reading_thread.start()
             
-            print(f"✓ Connected to {self.port} at {self.baudrate} baud")
+            print(f"[OK] Connected to {self.port} at {self.baudrate} baud")
             return True
             
         except serial.SerialException as e:
-            print(f"✗ Serial error connecting to {self.port}: {e}")
+            print(f"[ERROR] Serial error connecting to {self.port}: {e}")
             self.is_connected = False
             return False
         except Exception as e:
-            print(f"✗ Error connecting to {self.port}: {e}")
+            print(f"[ERROR] Error connecting to {self.port}: {e}")
             self.is_connected = False
             return False
     
@@ -146,21 +147,74 @@ class TelemetryHandler:
                             
                             if line:
                                 print(f"Received: {line}")
-                                parsed_data = self.parse_telemetry_string(line)
-                                if parsed_data:
-                                    self.latest_packet = parsed_data
-                                    print(f"✓ Parsed packet #{parsed_data.get('packet_count', '?')}")
+                                
+                                # Check if this is a log message or telemetry data
+                                log_message = self.parse_log_message(line)
+                                if log_message:
+                                    self.latest_packet = log_message
+                                    print(f"[LOG] {log_message.get('log_message', '')}")
+                                else:
+                                    # Try to parse as telemetry data
+                                    parsed_data = self.parse_telemetry_string(line)
+                                    if parsed_data:
+                                        self.latest_packet = parsed_data
+                                        print(f"[OK] Parsed packet #{parsed_data.get('packet_count', '?')}")
                                     
             except serial.SerialException as e:
-                print(f"✗ Serial error: {e}")
+                print(f"[ERROR] Serial error: {e}")
                 self.is_connected = False
                 break
             except Exception as e:
-                print(f"✗ Error reading serial data: {e}")
+                print(f"[ERROR] Error reading serial data: {e}")
             
             time.sleep(0.05)  # Small delay to prevent CPU overload
         
         print("Serial reading thread stopped.")
+    
+    def parse_log_message(self, data_string):
+        """
+        Parse log messages from CanSat
+        Log messages are identified by specific patterns like:
+        - "LOG: message"
+        - "[LOG] message"
+        - "DEBUG: message"
+        - Lines that don't match telemetry CSV format
+        """
+        try:
+            # Check for explicit log prefixes
+            log_prefixes = ['LOG:', '[LOG]', 'DEBUG:', '[DEBUG]', 'INFO:', '[INFO]', 'ERROR:', '[ERROR]', 'WARN:', '[WARN]']
+            
+            for prefix in log_prefixes:
+                if data_string.startswith(prefix):
+                    log_data = {
+                        'type': 'log',
+                        'log_message': data_string,
+                        'timestamp': datetime.now().isoformat(),
+                        'recording_time': datetime.now().isoformat()
+                    }
+                    # Store in log queue
+                    self.log_messages.append(log_data)
+                    return log_data
+            
+            # Check if line contains telemetry-like data (has commas and numbers)
+            # If it doesn't look like CSV telemetry data, treat as log
+            if ',' not in data_string or not any(char.isdigit() for char in data_string):
+                # Skip empty lines and common serial noise
+                if len(data_string.strip()) > 5 and not data_string.startswith('RX #'):
+                    log_data = {
+                        'type': 'log',
+                        'log_message': data_string.strip(),
+                        'timestamp': datetime.now().isoformat(),
+                        'recording_time': datetime.now().isoformat()
+                    }
+                    # Store in log queue
+                    self.log_messages.append(log_data)
+                    return log_data
+                    
+        except Exception as e:
+            print(f"[ERROR] Error parsing log message: {e}")
+        
+        return None
     
     def parse_telemetry_string(self, data_string):
         """
@@ -212,6 +266,9 @@ class TelemetryHandler:
                 }
                 
                 # Extract RSSI and SNR if present in the original string
+                parsed_data['rssi'] = 0.0  # Default values
+                parsed_data['snr'] = 0.0
+                
                 if '|' in data_string:
                     rssi_match = re.search(r'RSSI=(-?\d+\.?\d*)\s*dB', data_string)
                     snr_match = re.search(r'SNR=(-?\d+\.?\d*)', data_string)
@@ -265,10 +322,10 @@ class TelemetryHandler:
                 
                 return parsed_data
             else:
-                print(f"✗ Invalid data: expected 23 fields, got {len(fields)}")
+                print(f"[ERROR] Invalid data: expected 23 fields, got {len(fields)}")
                 
         except Exception as e:
-            print(f"✗ Error parsing telemetry data: {e}")
+            print(f"[ERROR] Error parsing telemetry data: {e}")
             print(f"   Raw data: {data_string}")
             
         return None
@@ -276,6 +333,12 @@ class TelemetryHandler:
     def get_latest_packet(self):
         """Get the latest received telemetry packet"""
         return self.latest_packet
+    
+    def get_latest_log(self):
+        """Get the latest received log message"""
+        if self.log_messages:
+            return self.log_messages.pop(0)  # Return and remove the oldest log
+        return None
     
     def read_data(self):
         """Read the latest data packet (for compatibility with main.py)"""

@@ -1,419 +1,216 @@
 """
-FastAPI Backend for CanSat GCS Dashboard
-Real-time telemetry data streaming via WebSocket and REST API
+Backend WebSocket Server for CanSat GCS
+Provides WebSocket API for the Next.js frontend
 """
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
-from typing import List, Optional
-import asyncio
-import json
-from datetime import datetime
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+from flask_socketio import SocketIO, emit
+import threading
+import time
 import sys
 import os
 
-# Add parent directory to path for importing existing modules
+# Add parent directory to path to import src modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.telemetry_handler import TelemetryHandler
 from src.data_manager import DataManager
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="CanSat GCS API",
-    description="Ground Control Station API for real-time telemetry monitoring",
-    version="2.0.0"
-)
+app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-# Configure CORS for Next.js dev server
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Initialize handlers (singleton instances)
+# Global instances
 telemetry_handler = TelemetryHandler()
 data_manager = DataManager()
+is_mission_active = False
 
-# WebSocket connection manager
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: List[WebSocket] = []
-
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
-
-    async def broadcast(self, message: dict):
-        """Broadcast message to all connected clients"""
-        for connection in self.active_connections:
-            try:
-                await connection.send_json(message)
-            except:
-                # Connection closed, will be removed on disconnect
-                pass
-
-manager = ConnectionManager()
-
-# Pydantic models for request/response validation
-class PortInfo(BaseModel):
-    port: str
-    description: str
-    hwid: str
-
-class PortsResponse(BaseModel):
-    ports: List[PortInfo]
-
-class ConnectRequest(BaseModel):
-    port: str
-    baudrate: int = 9600
-
-class StatusResponse(BaseModel):
-    status: str
-    message: str
-
-class ExportRequest(BaseModel):
-    format: str = "csv"  # "csv" or "json"
-
-class ExportResponse(BaseModel):
-    status: str
-    filename: str
-    records: int
-
-# ============================================================================
-# REST API ENDPOINTS
-# ============================================================================
-
-@app.get("/")
-async def root():
-    """API health check"""
-    return {
-        "status": "online",
-        "service": "CanSat GCS API",
-        "version": "2.0.0",
-        "endpoints": {
-            "rest": "/docs",
-            "websocket": "/ws/telemetry"
-        }
-    }
-
-@app.get("/api/ports", response_model=PortsResponse)
-async def get_available_ports():
-    """
-    Get list of available COM ports
-    
-    Returns:
-        List of available serial ports with descriptions
-    """
+# REST API Endpoints
+@app.route('/api/ports', methods=['GET'])
+def get_ports():
+    """REST API endpoint to get available COM ports"""
     try:
         ports = telemetry_handler.find_available_ports()
-        return {"ports": ports}
+        return jsonify({'ports': ports, 'success': True})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error scanning ports: {str(e)}")
+        return jsonify({'error': str(e), 'success': False}), 500
 
-@app.post("/api/connect", response_model=StatusResponse)
-async def connect_to_port(request: ConnectRequest):
-    """
-    Connect to specified COM port
-    
-    Args:
-        port: COM port name (e.g., "COM3")
-        baudrate: Baud rate for serial communication (default: 9600)
-    """
+@app.route('/api/start-recording', methods=['POST'])
+def start_recording():
+    """REST API endpoint to start CSV recording"""
     try:
-        success = telemetry_handler.start_serial_connection(request.port, request.baudrate)
+        data = request.get_json() or {}
+        filename = data.get('filename', 'telemetry_data.csv')
+        
+        # Start CSV recording in data_manager
+        data_manager.start_csv_recording(filename)
+        
+        global is_mission_active
+        is_mission_active = True
+        
+        print(f"[MISSION] Started recording to: {filename}")
+        return jsonify({'success': True, 'filename': filename, 'message': 'Recording started'})
+    except Exception as e:
+        print(f"[ERROR] Failed to start recording: {e}")
+        return jsonify({'error': str(e), 'success': False}), 500
+
+@app.route('/api/stop-recording', methods=['POST'])
+def stop_recording():
+    """REST API endpoint to stop CSV recording"""
+    try:
+        # Stop CSV recording in data_manager
+        data_manager.stop_csv_recording()
+        
+        global is_mission_active
+        is_mission_active = False
+        
+        print(f"[MISSION] Stopped recording")
+        return jsonify({'success': True, 'message': 'Recording stopped'})
+    except Exception as e:
+        print(f"[ERROR] Failed to stop recording: {e}")
+        return jsonify({'error': str(e), 'success': False}), 500
+
+# Socket.IO Event Handlers
+@socketio.on('connect')
+def handle_connect():
+    """Handle client connection"""
+    print(f"[CLIENT] Client connected")
+    emit('connection_status', {'status': 'connected', 'message': 'Connected to GCS backend'})
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Handle client disconnection"""
+    print(f"Client disconnected")
+
+@socketio.on('get_ports')
+def handle_get_ports():
+    """Get available COM ports"""
+    try:
+        ports = telemetry_handler.find_available_ports()
+        emit('ports_list', {'ports': ports})
+    except Exception as e:
+        emit('error', {'message': f"Error getting ports: {str(e)}"})
+
+@socketio.on('connect_serial')
+def handle_connect_serial(data):
+    """Connect to serial port"""
+    try:
+        port = data.get('port')
+        baudrate = data.get('baudrate', 115200)
+        
+        print(f"[DEBUG] Attempting to connect to {port} at {baudrate} baud...")
+        success = telemetry_handler.start_serial_connection(port, baudrate)
         if success:
-            return {
-                "status": "success",
-                "message": f"Connected to {request.port} at {request.baudrate} baud"
-            }
+            print(f"[SUCCESS] Connected to {port} at {baudrate} baud")
+            emit('serial_status', {'status': 'connected', 'port': port, 'baudrate': baudrate})
         else:
-            raise HTTPException(status_code=400, detail=f"Failed to connect to {request.port}")
+            print(f"[ERROR] Failed to connect to {port}")
+            emit('serial_status', {'status': 'error', 'message': 'Failed to connect'})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Connection error: {str(e)}")
+        print(f"[ERROR] Connection error: {str(e)}")
+        emit('error', {'message': f"Connection error: {str(e)}"})
 
-@app.post("/api/disconnect", response_model=StatusResponse)
-async def disconnect_from_port():
-    """
-    Disconnect from current COM port
-    """
+@socketio.on('disconnect_serial')
+def handle_disconnect_serial():
+    """Disconnect from serial port"""
     try:
         telemetry_handler.stop_serial_connection()
-        return {
-            "status": "success",
-            "message": "Disconnected successfully"
-        }
+        emit('serial_status', {'status': 'disconnected'})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Disconnect error: {str(e)}")
+        emit('error', {'message': f"Disconnect error: {str(e)}"})
 
-@app.post("/api/mission/start", response_model=StatusResponse)
-async def start_mission():
-    """
-    Start mission data collection
-    Begins recording telemetry data
-    """
+@socketio.on('start_mission')
+def handle_start_mission():
+    """Start mission data streaming"""
+    global is_mission_active
+    is_mission_active = True
+    emit('mission_status', {'status': 'started', 'active': True})
+    print("Mission started")
+
+@socketio.on('stop_mission')
+def handle_stop_mission():
+    """Stop mission data streaming"""
+    global is_mission_active
+    is_mission_active = False
+    emit('mission_status', {'status': 'stopped', 'active': False})
+    print("Mission stopped")
+
+@socketio.on('export_data')
+def handle_export_data(data):
+    """Export mission data"""
     try:
-        # Start data collection
-        data_manager.mission_started = True
-        data_manager.start_time = datetime.now()
-        
-        return {
-            "status": "success",
-            "message": "Mission started"
-        }
+        format_type = data.get('format', 'csv')
+        result = data_manager.export_data(format_type)
+        emit('export_result', result)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Mission start error: {str(e)}")
+        emit('error', {'message': f"Export error: {str(e)}"})
 
-@app.post("/api/mission/stop", response_model=StatusResponse)
-async def stop_mission():
-    """
-    Stop mission data collection
-    Saves all collected data
-    """
-    try:
-        data_manager.mission_started = False
-        
-        # Auto-save data
-        if data_manager.data:
-            data_manager.export_data()
-        
-        return {
-            "status": "success",
-            "message": "Mission stopped"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Mission stop error: {str(e)}")
-
-@app.get("/api/telemetry/latest")
-async def get_latest_telemetry():
-    """
-    Get latest telemetry packet (fallback for polling)
+def telemetry_broadcast_loop():
+    """Background thread to broadcast telemetry data"""
+    print("[TELEMETRY] Broadcast loop started...")
+    packet_count = 0
+    last_connection_status = False
     
-    Returns:
-        Latest telemetry data packet
-    """
-    try:
-        if telemetry_handler.latest_packet:
-            return telemetry_handler.latest_packet
-        else:
-            # Return template with test data if no real data
-            return telemetry_handler.generate_test_data()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Telemetry error: {str(e)}")
-
-@app.post("/api/export", response_model=ExportResponse)
-async def export_data(request: ExportRequest):
-    """
-    Export mission data to CSV or JSON
-    
-    Args:
-        format: Export format ("csv" or "json")
-    """
-    try:
-        filename = data_manager.export_data(format=request.format)
-        records = len(data_manager.data)
-        
-        return {
-            "status": "success",
-            "filename": filename,
-            "records": records
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Export error: {str(e)}")
-
-@app.post("/api/calibrate", response_model=StatusResponse)
-async def calibrate_sensors():
-    """
-    Calibrate sensors
-    Resets offsets and baselines
-    """
-    try:
-        # Placeholder for calibration logic
-        # In production, this would send calibration command to CanSat
-        
-        return {
-            "status": "success",
-            "message": "Sensors calibrated"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Calibration error: {str(e)}")
-
-@app.get("/api/connection/status")
-async def get_connection_status():
-    """
-    Get current connection status
-    """
-    return {
-        "is_connected": telemetry_handler.is_connected,
-        "port": telemetry_handler.port if telemetry_handler.is_connected else None,
-        "baudrate": telemetry_handler.baudrate if telemetry_handler.is_connected else None,
-        "mission_running": data_manager.mission_started if hasattr(data_manager, 'mission_started') else False
-    }
-
-@app.get("/api/system/battery")
-async def get_system_battery():
-    """
-    Get GCS laptop battery status
-    """
-    try:
-        import psutil
-        battery = psutil.sensors_battery()
-        
-        if battery is None:
-            # No battery (desktop PC)
-            return {
-                "has_battery": False,
-                "percentage": 100,
-                "is_charging": False,
-                "power_plugged": True
-            }
-        
-        return {
-            "has_battery": True,
-            "percentage": int(battery.percent),
-            "is_charging": battery.power_plugged,
-            "power_plugged": battery.power_plugged,
-            "time_left": battery.secsleft if battery.secsleft > 0 else None
-        }
-    except ImportError:
-        # psutil not installed
-        return {
-            "has_battery": False,
-            "percentage": 100,
-            "is_charging": False,
-            "power_plugged": True,
-            "error": "psutil not installed"
-        }
-    except Exception as e:
-        return {
-            "has_battery": False,
-            "percentage": 100,
-            "is_charging": False,
-            "power_plugged": True,
-            "error": str(e)
-        }
-
-# ============================================================================
-# WEBSOCKET ENDPOINT FOR REAL-TIME TELEMETRY
-# ============================================================================
-
-@app.websocket("/ws/telemetry")
-async def websocket_telemetry(websocket: WebSocket):
-    """
-    WebSocket endpoint for real-time telemetry streaming
-    Pushes data at ~2Hz to connected clients
-    Only sends data when actually connected to COM port and mission is started
-    """
-    await manager.connect(websocket)
-    print(f"WebSocket client connected. Total connections: {len(manager.active_connections)}")
-    
-    try:
-        # Send initial connection confirmation
-        await websocket.send_json({
-            "type": "connection",
-            "status": "connected",
-            "message": "WebSocket connected successfully",
-            "is_serial_connected": telemetry_handler.is_connected,
-            "mission_running": data_manager.mission_started if hasattr(data_manager, 'mission_started') else False
-        })
-        
-        # Main telemetry streaming loop
-        while True:
-            # Only send data if connected to COM port AND mission is started
-            if telemetry_handler.is_connected and telemetry_handler.latest_packet:
-                telemetry_data = telemetry_handler.latest_packet.copy()
-                
-                # Add metadata
-                telemetry_data['type'] = 'telemetry'
-                telemetry_data['timestamp'] = datetime.now().isoformat()
-                
-                # Send to client
-                await websocket.send_json(telemetry_data)
-            else:
-                # Send status update instead of fake data
-                await websocket.send_json({
-                    "type": "status",
-                    "is_serial_connected": telemetry_handler.is_connected,
-                    "port": telemetry_handler.port if telemetry_handler.is_connected else None,
-                    "message": "Waiting for COM port connection and data..." if not telemetry_handler.is_connected else "Waiting for telemetry data...",
-                    "timestamp": datetime.now().isoformat()
-                })
-            
-            # Wait ~500ms for 2Hz update rate
-            await asyncio.sleep(0.5)
-            
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-        print(f"WebSocket client disconnected. Total connections: {len(manager.active_connections)}")
-    except Exception as e:
-        print(f"WebSocket error: {e}")
-        manager.disconnect(websocket)
-
-# ============================================================================
-# BACKGROUND TASK FOR DATA COLLECTION
-# ============================================================================
-
-@app.on_event("startup")
-async def startup_event():
-    """
-    Run on application startup
-    Starts background telemetry collection task
-    """
-    print("FastAPI GCS Backend starting...")
-    print("WebSocket endpoint: ws://localhost:8000/ws/telemetry")
-    print("API docs: http://localhost:8000/docs")
-    
-    # Start background task for telemetry collection
-    asyncio.create_task(telemetry_collection_task())
-
-async def telemetry_collection_task():
-    """
-    Background task that continuously collects telemetry data
-    and stores it in DataManager
-    """
     while True:
-        try:
-            # If connected and mission running, store data
-            if telemetry_handler.latest_packet and hasattr(data_manager, 'mission_started') and data_manager.mission_started:
-                data_manager.store_data(telemetry_handler.latest_packet)
-            
-            await asyncio.sleep(0.5)  # Check every 500ms
-        except Exception as e:
-            print(f"Telemetry collection error: {e}")
-            await asyncio.sleep(1)
+        # Monitor connection status changes
+        current_connection_status = telemetry_handler.is_connected
+        if current_connection_status != last_connection_status:
+            status = 'connected' if current_connection_status else 'disconnected'
+            print(f"[CONNECTION] Serial status changed to: {status}")
+            socketio.emit('serial_status', {'status': status})
+            last_connection_status = current_connection_status
+        
+        if telemetry_handler.is_connected:
+            try:
+                # Handle telemetry packets
+                packet = telemetry_handler.get_latest_packet()
+                if packet:
+                    packet_count += 1
+                    
+                    # Store data if mission is active
+                    if is_mission_active:
+                        data_manager.store_data(packet)
+                    
+                    # Broadcast to all connected clients
+                    socketio.emit('telemetry_data', packet)
+                    
+                    # Log every 10th packet to avoid spam
+                    if packet_count % 10 == 0:
+                        print(f"[TELEMETRY] Broadcast #{packet_count}: Alt={packet.get('altitude', 0):.1f}m, Batt={packet.get('battery_percentage', 0):.0f}%, RSSI={packet.get('rssi', 'N/A')}")
+                
+                # Handle log messages
+                log_message = telemetry_handler.get_latest_log()
+                if log_message:
+                    # Store log if mission is active
+                    if is_mission_active:
+                        data_manager.store_data(log_message)
+                    
+                    # Broadcast log to all connected clients
+                    socketio.emit('log_message', log_message)
+                    print(f"[LOG] {log_message.get('log_message', 'Unknown log')}")
+                    
+            except Exception as e:
+                print(f"[TELEMETRY] Error in broadcast loop: {e}")
+        
+        time.sleep(0.1)  # 10 Hz update rate
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """
-    Run on application shutdown
-    Cleans up connections
-    """
-    print("Shutting down FastAPI GCS Backend...")
-    if telemetry_handler.is_connected:
-        telemetry_handler.stop_serial_connection()
+def start_backend_server():
+    """Start the backend WebSocket server"""
+    print("=" * 60)
+    print("Starting CanSat GCS Backend Server")
+    print("=" * 60)
+    print(f"WebSocket Server: http://localhost:5000")
+    print(f"CORS enabled for all origins")
+    print("Waiting for connections...")
+    print("=" * 60)
     
-    # Auto-save data if available
-    if hasattr(data_manager, 'data') and data_manager.data:
-        data_manager.export_data()
+    # Start telemetry broadcast thread
+    broadcast_thread = threading.Thread(target=telemetry_broadcast_loop, daemon=True)
+    broadcast_thread.start()
+    
+    # Start Flask-SocketIO server
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
-    )
+    start_backend_server()

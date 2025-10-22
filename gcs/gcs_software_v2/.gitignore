@@ -1,81 +1,207 @@
+# ===========================# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
 # Python
-__pycache__/
+
+# ===========================# dependencies
+
+__pycache__//node_modules
+
 *.py[cod]
-*$py.class
-*.so
-.Python
-venv/
-env/
-ENV/
+
+*$py.class# next.js
+
+*.so/.next/
+
+.Python/out/
+
 build/
-develop-eggs/
-dist/
+
+develop-eggs/# production
+
+dist//build
+
 downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
+
+eggs/# debug
+
+.eggs/npm-debug.log*
+
+lib/yarn-debug.log*
+
+lib64/yarn-error.log*
+
+parts/.pnpm-debug.log*
+
 sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
+
+var/# env files
+
+wheels/.env*
+
+share/python-wheels/
+
+*.egg-info/# vercel
+
+.installed.cfg.vercel
+
 *.egg
 
-# Virtual Environment
-venv/
-ENV/
-env/
+MANIFEST# typescript
 
-# IDEs
+pip-log.txt*.tsbuildinfo
+
+pip-delete-this-directory.txtnext-env.d.ts
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# ===========================
+# Node.js / Next.js
+# ===========================
+node_modules/
+.next/
+out/
+.turbo/
+build/
+
+# Package manager logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+lerna-debug.log*
+.npm
+.yarn/
+.pnpm-store/
+
+# Package locks (keep only pnpm-lock.yaml)
+package-lock.json
+yarn.lock
+
+# Next.js
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+
+# ===========================
+# IDEs and Editors
+# ===========================
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 .DS_Store
+*.sublime-project
+*.sublime-workspace
 
-# Node.js (for Next.js frontend)
-node_modules/
-.next/
-out/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# Next.js
-.next/
-out/
-build/
-.turbo/
-
-# Testing
-.coverage
-.pytest_cache/
-htmlcov/
-
-# Environment variables
+# ===========================
+# Environment & Secrets
+# ===========================
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+.env*.local
+*.pem
 
-# Data files (optional - uncomment if you don't want to track telemetry data)
-# telemetry.csv
-# data/mission_data.json
-
-# OS
-.DS_Store
-Thumbs.db
-desktop.ini
+# ===========================
+# Project Specific
+# ===========================
 
 # Backend data
-backend/data/
+backend/data/*.csv
 
+# Telemetry & Mission Data
+*.csv
+telemetry.csv
+data/*.csv
+data/telemetry_*.csv
+
+# Exported data
+exports/
+*.xlsx
+*.json.bak
+
+# Old web folder (cleanup)
+web/
+
+# ===========================
+# OS Files
+# ===========================
+Thumbs.db
+.DS_Store
+desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ===========================
 # Logs
+# ===========================
 *.log
 logs/
+*.log.*
+
+# ===========================
+# Temporary Files
+# ===========================
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+.cache/
+
+# ===========================
+# Build Outputs
+# ===========================
+*.exe
+*.app
+*.dmg
+*.pkg
+*.deb
+*.rpm
+
+# ===========================
+# Documentation Builds
+# ===========================
+docs/_build/
+site/
+
+# ===========================
+# Build Scripts
+# ===========================
+*.bat
+main.py

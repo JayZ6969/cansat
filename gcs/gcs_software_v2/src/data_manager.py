@@ -14,6 +14,9 @@ class DataManager:
         self.telemetry_data = []
         self.session_start_time = None
         self.data_file_path = "data/mission_data.json"
+        self.csv_file = None
+        self.csv_writer = None
+        self.csv_recording = False
         self.ensure_data_directory()
     
     def ensure_data_directory(self):
@@ -21,15 +24,31 @@ class DataManager:
         os.makedirs("data", exist_ok=True)
     
     def store_data(self, telemetry_packet):
-        """Store incoming telemetry data"""
+        """Store incoming telemetry data or log messages"""
         if not self.session_start_time:
             self.session_start_time = datetime.now()
         
         # Add session timestamp
         telemetry_packet['session_time'] = (datetime.now() - self.session_start_time).total_seconds()
         
+        # Add recording time (current timestamp when data was recorded by GCS)
+        if 'recording_time' not in telemetry_packet:
+            telemetry_packet['recording_time'] = datetime.now().isoformat()
+        
         # Store in memory
         self.telemetry_data.append(telemetry_packet)
+        
+        # Write to CSV if recording is active
+        if self.csv_recording and self.csv_writer:
+            try:
+                # Handle log messages differently
+                if telemetry_packet.get('type') == 'log':
+                    self.write_log_to_csv(telemetry_packet)
+                else:
+                    self.csv_writer.writerow(telemetry_packet)
+                self.csv_file.flush()  # Ensure data is written immediately
+            except Exception as e:
+                print(f"[ERROR] Failed to write to CSV: {e}")
         
         # Keep only last 1000 data points in memory to prevent memory issues
         if len(self.telemetry_data) > 1000:
@@ -38,6 +57,22 @@ class DataManager:
         # Optionally save to file every 10 packets
         if len(self.telemetry_data) % 10 == 0:
             self.save_session_data()
+    
+    def write_log_to_csv(self, log_packet):
+        """Write log message as a separate line in CSV file"""
+        # Create a log entry row with the log message and timestamp
+        log_row = {}
+        # Initialize all CSV columns with empty values
+        for header in self.csv_headers:
+            log_row[header] = ''
+        
+        # Fill in log-specific data
+        log_row['recording_time'] = log_packet.get('recording_time', datetime.now().isoformat())
+        log_row['team_id'] = f"LOG: {log_packet.get('log_message', 'Unknown log')}"
+        log_row['mission_time'] = log_packet.get('timestamp', '')
+        
+        # Write the log row
+        self.csv_writer.writerow(log_row)
     
     def get_latest_data(self):
         """Get the latest telemetry data"""
@@ -249,3 +284,50 @@ class DataManager:
             summary['battery_used'] = 100 - current_battery
         
         return summary
+    
+    def start_csv_recording(self, filename):
+        """Start recording telemetry data to CSV file"""
+        try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(filename) if os.path.dirname(filename) else '.', exist_ok=True)
+            
+            # Open CSV file for writing
+            self.csv_file = open(filename, 'w', newline='')
+            
+            # Define CSV headers to match the CanSat telemetry format exactly
+            fieldnames = [
+                'team_id', 'mission_time', 'packet_count', 'altitude', 'pressure', 'temperature', 
+                'battery_voltage', 'gnss_time', 'gnss_lat', 'gnss_long', 'gnss_alt', 'gnss_sats',
+                'accel_x', 'accel_y', 'accel_z', 'gyro_x', 'gyro_y', 'gyro_z', 'pid_output',
+                'flight_state', 'servo_status', 'error_code', 'gnss_speed', 'recording_time',
+                'rssi', 'snr'
+            ]
+            
+            self.csv_writer = csv.DictWriter(self.csv_file, fieldnames=fieldnames, extrasaction='ignore')
+            self.csv_writer.writeheader()
+            self.csv_file.flush()
+            
+            self.csv_recording = True
+            print(f"[DATA MANAGER] Started CSV recording to: {filename}")
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to start CSV recording: {e}")
+            if self.csv_file:
+                self.csv_file.close()
+                self.csv_file = None
+            raise
+    
+    def stop_csv_recording(self):
+        """Stop recording telemetry data to CSV file"""
+        try:
+            self.csv_recording = False
+            
+            if self.csv_file:
+                self.csv_file.close()
+                self.csv_file = None
+                self.csv_writer = None
+                print("[DATA MANAGER] Stopped CSV recording")
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to stop CSV recording: {e}")
+            raise
