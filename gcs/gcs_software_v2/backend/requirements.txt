@@ -1,0 +1,32 @@
+# FastAPI Backend Requirements
+# CanSat GCS Dashboard - Backend Dependencies
+
+# Core FastAPI framework
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+
+# WebSocket support
+websockets==13.1
+
+# Request validation
+pydantic==2.9.2
+pydantic-settings==2.6.0
+
+# CORS middleware (included in FastAPI but explicit for clarity)
+python-multipart==0.0.12
+
+# Serial communication (keep existing dependencies)
+pyserial==3.5
+
+# System monitoring
+psutil==6.1.0
+# Data processing (keep existing versions for compatibility)
+numpy==1.26.4
+pandas==2.2.3
+
+# Date/time utilities
+python-dateutil==2.9.0
+
+# Optional: For production deployment
+# gunicorn==23.0.0
+# python-dotenv==1.0.1
