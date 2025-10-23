@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+import NotificationService from "@/lib/notification-service"
+import { addTerminalLog } from "@/components/terminal"
 
 interface SettingsSidebarProps {
   isOpen: boolean
@@ -85,27 +87,72 @@ export function SettingsSidebar({ isOpen, onClose, isConnected = false, onConnec
     setIsConnecting(true)
     
     if (isConnected) {
-      // Disconnect
+      // Disconnect - use the main WebSocket connection if available
       try {
+        // Try to use existing connection first, fall back to new connection
         const { io } = await import('socket.io-client')
-        const socket = io('http://localhost:5000')
-        socket.emit('disconnect_serial')
-        socket.on('serial_status', (data: any) => {
-          console.log('[GCS] Serial disconnected:', data)
-          if (data.status === 'disconnected') {
-            onDisconnect?.()
-          }
-          socket.disconnect()
+        const socket = io('http://localhost:5000', {
+          timeout: 5000,
+          reconnection: false
         })
+        
+        let disconnected = false
+        
+        // Set a timeout to disconnect locally if server doesn't respond
+        const disconnectTimeout = setTimeout(() => {
+          if (!disconnected) {
+            console.log('[GCS] Disconnect timeout, forcing local disconnect')
+            disconnected = true
+            onDisconnect?.()
+            socket.disconnect()
+          }
+        }, 3000) // 3 second timeout
+        
+        socket.on('connect', () => {
+          console.log('[GCS] Connected for disconnect operation')
+          socket.emit('disconnect_serial')
+        })
+        
+        socket.emit('disconnect_serial')
+        
+        socket.on('serial_status', (data: any) => {
+          console.log('[GCS] Serial status update:', data)
+          if (!disconnected) {
+            clearTimeout(disconnectTimeout)
+            disconnected = true
+            if (data.status === 'disconnected') {
+              onDisconnect?.()
+            }
+            socket.disconnect()
+          }
+        })
+        
+        // Handle connection errors gracefully during disconnect
+        socket.on('connect_error', (error: any) => {
+          if (!disconnected) {
+            console.log('[GCS] Socket connection error during disconnect (expected):', error)
+            clearTimeout(disconnectTimeout)
+            disconnected = true
+            // Still call onDisconnect since we wanted to disconnect anyway
+            onDisconnect?.()
+            socket.disconnect()
+          }
+        })
+        
       } catch (error) {
-        console.error('[GCS] Failed to disconnect:', error)
+        console.log('[GCS] Failed to create disconnect socket:', error)
+        // Even if disconnect fails, we should update the UI state
+        onDisconnect?.()
       }
     } else {
       // Connect
       if (selectedPort) {
         try {
           const { io } = await import('socket.io-client')
-          const socket = io('http://localhost:5000')
+          const socket = io('http://localhost:5000', {
+            timeout: 10000,
+            reconnection: false
+          })
           
           socket.on('connect', () => {
             console.log('[GCS] Socket.IO connected, sending serial connection request...')
@@ -116,29 +163,65 @@ export function SettingsSidebar({ isOpen, onClose, isConnected = false, onConnec
             console.log('[GCS] Serial connection status:', data)
             if (data.status === 'connected') {
               console.log(`[GCS] Successfully connected to ${data.port} at ${data.baudrate} baud`)
+              NotificationService.showConnectionSuccess(`${data.port} (${data.baudrate} baud)`)
+              addTerminalLog({
+                source: 'System',
+                level: 'INFO',
+                message: `Connected to ${data.port} at ${data.baudrate} baud`
+              })
               onConnect?.(selectedPort, parseInt(baudRate))
-            } else if (data.status === 'error' || data.status === 'disconnected') {
+              socket.disconnect()
+            } else if (data.status === 'error') {
               console.error('[GCS] Serial connection error:', data.message || 'Connection failed')
-              alert('Connection failed: ' + (data.message || 'Unknown error'))
+              const errorMsg = data.message || 'Unknown error'
+              NotificationService.showConnectionError(errorMsg)
+              addTerminalLog({
+                source: 'System',
+                level: 'ERROR',
+                message: `Serial connection failed: ${errorMsg}`
+              })
               onDisconnect?.()
+              socket.disconnect()
             }
           })
           
-          socket.on('error', (error: any) => {
-            console.error('[GCS] Socket.IO error:', error)
-            alert('Connection failed: ' + error.message)
+          socket.on('connect_error', (error: any) => {
+            console.error('[GCS] Socket.IO connection error:', error)
+            NotificationService.showConnectionError('Failed to connect to backend service')
+            addTerminalLog({
+              source: 'System',
+              level: 'ERROR',
+              message: `Backend connection error: ${error.message || error}`
+            })
             onDisconnect?.()
+          })
+          
+          socket.on('error', (error: any) => {
+            console.error('[GCS] Socket.IO error during connection:', error)
+            NotificationService.showConnectionError(error.message || 'Socket error occurred')
+            addTerminalLog({
+              source: 'System',
+              level: 'ERROR',
+              message: `Socket error during connection: ${error.message || error}`
+            })
+            onDisconnect?.()
+            socket.disconnect()
           })
         } catch (error) {
           console.error('[GCS] Failed to connect:', error)
-          alert('Connection failed: ' + error)
+          NotificationService.showConnectionError(String(error))
+          addTerminalLog({
+            source: 'System',
+            level: 'ERROR',
+            message: `Connection attempt failed: ${error}`
+          })
         }
       } else {
-        alert('Please select a COM port first')
+        NotificationService.showConnectionError('Please select a COM port first')
       }
     }
     
-    setTimeout(() => setIsConnecting(false), 2000)
+    setTimeout(() => setIsConnecting(false), 3000) // Increased timeout
   }
 
   return (

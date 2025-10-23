@@ -20,6 +20,7 @@ class TelemetryHandler:
         self.reading_thread = None
         self.stop_reading = False
         self.latest_packet = None
+        self.latest_telemetry = None  # Separate storage for telemetry data
         self.buffer = ""
         self.log_messages = []  # Queue for storing log messages
         
@@ -151,14 +152,18 @@ class TelemetryHandler:
                                 # Check if this is a log message or telemetry data
                                 log_message = self.parse_log_message(line)
                                 if log_message:
-                                    self.latest_packet = log_message
+                                    self.log_messages.append(log_message)
                                     print(f"[LOG] {log_message.get('log_message', '')}")
                                 else:
                                     # Try to parse as telemetry data
                                     parsed_data = self.parse_telemetry_string(line)
                                     if parsed_data:
-                                        self.latest_packet = parsed_data
-                                        print(f"[OK] Parsed packet #{parsed_data.get('packet_count', '?')}")
+                                        self.latest_telemetry = parsed_data
+                                        self.latest_packet = parsed_data  # Keep for backward compatibility
+                                        print(f"[OK] Parsed packet #{parsed_data.get('packet_count', '?')} - Alt: {parsed_data.get('altitude', 0):.1f}m, RSSI: {parsed_data.get('rssi', 0):.0f}dB")
+                                    else:
+                                        # Line couldn't be parsed as either log or telemetry
+                                        print(f"[SKIP] Unrecognized format: {line[:50]}...")
                                     
             except serial.SerialException as e:
                 print(f"[ERROR] Serial error: {e}")
@@ -173,16 +178,17 @@ class TelemetryHandler:
     
     def parse_log_message(self, data_string):
         """
-        Parse log messages from CanSat
+        Parse log messages from CanSat/GCS
         Log messages are identified by specific patterns like:
+        - "[LOGS] message" (from GCS receiver)
+        - "[STATUS] message" (from CanSat) 
         - "LOG: message"
-        - "[LOG] message"
         - "DEBUG: message"
         - Lines that don't match telemetry CSV format
         """
         try:
-            # Check for explicit log prefixes
-            log_prefixes = ['LOG:', '[LOG]', 'DEBUG:', '[DEBUG]', 'INFO:', '[INFO]', 'ERROR:', '[ERROR]', 'WARN:', '[WARN]']
+            # Check for explicit log prefixes (including LOGS and STATUS messages)
+            log_prefixes = ['[LOGS]', 'LOG:', '[LOG]', '[STATUS]', 'DEBUG:', '[DEBUG]', 'INFO:', '[INFO]', 'ERROR:', '[ERROR]', 'WARN:', '[WARN]']
             
             for prefix in log_prefixes:
                 if data_string.startswith(prefix):
@@ -192,8 +198,6 @@ class TelemetryHandler:
                         'timestamp': datetime.now().isoformat(),
                         'recording_time': datetime.now().isoformat()
                     }
-                    # Store in log queue
-                    self.log_messages.append(log_data)
                     return log_data
             
             # Check if line contains telemetry-like data (has commas and numbers)
@@ -207,8 +211,6 @@ class TelemetryHandler:
                         'timestamp': datetime.now().isoformat(),
                         'recording_time': datetime.now().isoformat()
                     }
-                    # Store in log queue
-                    self.log_messages.append(log_data)
                     return log_data
                     
         except Exception as e:
@@ -219,21 +221,65 @@ class TelemetryHandler:
     def parse_telemetry_string(self, data_string):
         """
         Parse telemetry data string into structured format
-        Expected format: RX #XXX @ XXXXX ms | XXX bytes | RSSI=XX dB | SNR=X.X | CSV_DATA
-        or just: CSV_DATA
+        Expected formats: 
+        - [CSV] TEAM_ID,MISSION_TIME,PACKET_COUNT,... | RSSI: -42 dBm | SNR: 10.00 dB
+        - CSV:TEAM_ID,MISSION_TIME,PACKET_COUNT,ALTITUDE,PRESSURE,TEMP,VOLTAGE...
+        - RX #XXX @ XXXXX ms | XXX bytes | RSSI=XX dB | SNR=X.X | CSV:TEAM_ID,...
         
-        CSV fields (22): TEAM_ID,MISSION_TIME,PACKET_COUNT,ALTITUDE,PRESSURE,TEMP,VOLTAGE,
+        CSV fields (23): TEAM_ID,MISSION_TIME,PACKET_COUNT,ALTITUDE,PRESSURE,TEMP,VOLTAGE,
                         GPS_TIME,GPS_LATITUDE,GPS_LONGITUDE,GPS_ALTITUDE,GPS_SATS,
                         ACCEL_X,ACCEL_Y,ACCEL_Z,GYRO_X,GYRO_Y,GYRO_Z,PID_OUTPUT,
                         STATE,SERVO,ERROR_CODE,GNSS_SPEED
         """
         try:
-            # Extract CSV data from the line (after the last '|' if present)
-            csv_data = data_string
-            if '|' in data_string:
-                # Split by '|' and get the last part (which should be the CSV data)
-                parts = data_string.split('|')
-                csv_data = parts[-1].strip()
+            # Check for different CSV formats
+            csv_data = None
+            rssi = None
+            snr = None
+            
+            if data_string.startswith("[CSV] "):
+                # New GCS format: [CSV] data | RSSI: -42 dBm | SNR: 10.00 dB
+                # Extract CSV data (between [CSV] and first |)
+                parts = data_string.split(' | ')
+                csv_part = parts[0]
+                csv_data = csv_part[6:].strip()  # Remove "[CSV] " prefix
+                
+                # Extract RSSI and SNR from the remaining parts
+                for part in parts[1:]:
+                    if part.startswith("RSSI: "):
+                        rssi_str = part.replace("RSSI: ", "").replace(" dBm", "")
+                        try:
+                            rssi = float(rssi_str)
+                        except ValueError:
+                            pass
+                    elif part.startswith("SNR: "):
+                        snr_str = part.replace("SNR: ", "").replace(" dB", "")
+                        try:
+                            snr = float(snr_str)
+                        except ValueError:
+                            pass
+                            
+            elif "CSV:" in data_string:
+                # Old format: CSV:TEAM_ID,... or RX #XXX | CSV:TEAM_ID,...
+                if '|' in data_string:
+                    # Split by '|' and find the part with CSV:
+                    parts = data_string.split('|')
+                    for part in parts:
+                        if "CSV:" in part:
+                            csv_data = part.strip()
+                            break
+                else:
+                    csv_data = data_string.strip()
+                
+                # Remove "CSV:" prefix if present
+                if csv_data and csv_data.startswith("CSV:"):
+                    csv_data = csv_data[4:].strip()
+            else:
+                # Not a CSV format we recognize
+                return None
+            
+            if not csv_data:
+                return None
             
             # Now parse the CSV data
             fields = csv_data.strip().split(',')
@@ -265,11 +311,12 @@ class TelemetryHandler:
                     'gnss_speed': float(fields[22]) if len(fields) > 22 and self._is_float(fields[22]) else 0.0
                 }
                 
-                # Extract RSSI and SNR if present in the original string
-                parsed_data['rssi'] = 0.0  # Default values
-                parsed_data['snr'] = 0.0
+                # Add RSSI and SNR data (extracted earlier or default values)
+                parsed_data['rssi'] = rssi if rssi is not None else 0.0
+                parsed_data['snr'] = snr if snr is not None else 0.0
                 
-                if '|' in data_string:
+                # If RSSI/SNR not found in new format, try old format parsing
+                if rssi is None and snr is None and '|' in data_string:
                     rssi_match = re.search(r'RSSI=(-?\d+\.?\d*)\s*dB', data_string)
                     snr_match = re.search(r'SNR=(-?\d+\.?\d*)', data_string)
                     
@@ -331,8 +378,12 @@ class TelemetryHandler:
         return None
     
     def get_latest_packet(self):
-        """Get the latest received telemetry packet"""
-        return self.latest_packet
+        """Get the latest received telemetry packet (not log messages)"""
+        packet = self.latest_telemetry
+        if packet:
+            # Clear after reading to avoid duplicates
+            self.latest_telemetry = None
+        return packet
     
     def get_latest_log(self):
         """Get the latest received log message"""
@@ -342,10 +393,10 @@ class TelemetryHandler:
     
     def read_data(self):
         """Read the latest data packet (for compatibility with main.py)"""
-        packet = self.latest_packet
+        packet = self.latest_telemetry
         if packet:
             # Clear after reading to avoid duplicates
-            self.latest_packet = None
+            self.latest_telemetry = None
         return packet
     
     def generate_test_data(self):

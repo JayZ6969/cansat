@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react"
 import type { TelemetryData, ConnectionState } from "./telemetry-types"
 import { WebSocketClient } from "./websocket-client"
 import { generateMockTelemetry } from "./mock-data"
+import NotificationService from "./notification-service"
 
 interface UseTelemetryOptions {
   useMockData?: boolean
@@ -25,6 +26,9 @@ export function useTelemetry(options: UseTelemetryOptions = {}) {
   const [missionTime, setMissionTime] = useState(0)
   const wsClientRef = useRef<WebSocketClient | null>(null)
   const missionTimeRef = useRef(0)
+  const lastLoRaDataRef = useRef<number>(0)
+  const loraTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const lastLoRaStatusRef = useRef<boolean>(false)
 
   // Initialize WebSocket if URL provided
   useEffect(() => {
@@ -56,8 +60,12 @@ export function useTelemetry(options: UseTelemetryOptions = {}) {
         if (event.data && typeof event.data !== 'string') {
           setTelemetry(event.data)
           
-          // Check if LoRa is connected based on presence of RSSI/SNR
-          const loraConnected = event.data.rssi !== undefined && event.data.rssi !== null
+          // Update last LoRa data timestamp for any data received (CSV or non-CSV)
+          lastLoRaDataRef.current = Date.now()
+          
+          // Check if LoRa is connected based on presence of RSSI/SNR OR recent data
+          const hasRSSI = event.data.rssi !== undefined && event.data.rssi !== null
+          const loraConnected = true // Any data means LoRa is connected
           
           setConnectionState((prev) => ({
             ...prev,
@@ -65,6 +73,75 @@ export function useTelemetry(options: UseTelemetryOptions = {}) {
             messageCount: prev.messageCount + 1,
             loraConnected,
           }))
+          
+          // Reset LoRa timeout
+          if (loraTimeoutRef.current) {
+            clearTimeout(loraTimeoutRef.current)
+          }
+          
+          // Set new timeout for 30 seconds
+          loraTimeoutRef.current = setTimeout(() => {
+            console.log("[GCS] LoRa timeout - no data for 30 seconds")
+            setConnectionState((prev) => {
+              if (prev.loraConnected && lastLoRaStatusRef.current) {
+                NotificationService.showLoRaStatus(false)
+                lastLoRaStatusRef.current = false
+              }
+              return {
+                ...prev,
+                loraConnected: false,
+              }
+            })
+          }, 30000) // 30 seconds
+          
+          // Notify if LoRa status changed to connected
+          if (!lastLoRaStatusRef.current) {
+            NotificationService.showLoRaStatus(true)
+            lastLoRaStatusRef.current = true
+          }
+        }
+      })
+
+      // Handle log messages and status messages (keeps LoRa connection alive)
+      wsClientRef.current.on("log_message", (event) => {
+        if (event.data) {
+          console.log("[GCS] Log/Status message received:", event.data)
+          
+          // Update last LoRa data timestamp for log/status messages too
+          lastLoRaDataRef.current = Date.now()
+          
+          // Reset LoRa timeout for any received data
+          if (loraTimeoutRef.current) {
+            clearTimeout(loraTimeoutRef.current)
+          }
+          
+          // Set new timeout for 30 seconds
+          loraTimeoutRef.current = setTimeout(() => {
+            console.log("[GCS] LoRa timeout - no data for 30 seconds")
+            setConnectionState((prev) => {
+              if (prev.loraConnected && lastLoRaStatusRef.current) {
+                NotificationService.showLoRaStatus(false)
+                lastLoRaStatusRef.current = false
+              }
+              return {
+                ...prev,
+                loraConnected: false,
+              }
+            })
+          }, 30000) // 30 seconds
+          
+          // Keep LoRa connected since we received data and notify if status changed
+          setConnectionState((prev) => {
+            if (!lastLoRaStatusRef.current) {
+              NotificationService.showLoRaStatus(true)
+              lastLoRaStatusRef.current = true
+            }
+            return {
+              ...prev,
+              loraConnected: true,
+              lastUpdate: Date.now(),
+            }
+          })
         }
       })
 

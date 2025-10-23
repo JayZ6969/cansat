@@ -106,19 +106,34 @@ def handle_connect_serial(data):
             emit('serial_status', {'status': 'connected', 'port': port, 'baudrate': baudrate})
         else:
             print(f"[ERROR] Failed to connect to {port}")
-            emit('serial_status', {'status': 'error', 'message': 'Failed to connect'})
+            emit('serial_status', {'status': 'error', 'message': f'Failed to connect to {port}. Port may be busy or unavailable.'})
+    except PermissionError as e:
+        error_msg = f"Permission denied accessing {port}. Port may be in use by another application."
+        print(f"[ERROR] Permission error: {error_msg}")
+        emit('serial_status', {'status': 'error', 'message': error_msg})
+    except FileNotFoundError as e:
+        error_msg = f"Port {port} not found. Please check if the device is connected."
+        print(f"[ERROR] Port not found: {error_msg}")
+        emit('serial_status', {'status': 'error', 'message': error_msg})
     except Exception as e:
-        print(f"[ERROR] Connection error: {str(e)}")
-        emit('error', {'message': f"Connection error: {str(e)}"})
+        error_msg = f"Connection error: {str(e)}"
+        print(f"[ERROR] {error_msg}")
+        emit('serial_status', {'status': 'error', 'message': error_msg})
 
 @socketio.on('disconnect_serial')
 def handle_disconnect_serial():
     """Disconnect from serial port"""
     try:
+        print(f"[DEBUG] Disconnect request received")
         telemetry_handler.stop_serial_connection()
-        emit('serial_status', {'status': 'disconnected'})
+        print(f"[SUCCESS] Serial connection stopped")
+        emit('serial_status', {'status': 'disconnected', 'message': 'Successfully disconnected'})
     except Exception as e:
-        emit('error', {'message': f"Disconnect error: {str(e)}"})
+        print(f"[WARNING] Disconnect error (may be expected): {str(e)}")
+        # Even if there's an error, we still want to report as disconnected
+        # because the user requested a disconnect
+        emit('serial_status', {'status': 'disconnected', 'message': 'Disconnected (with warnings)'})
+        # Don't emit error event for disconnect operations
 
 @socketio.on('start_mission')
 def handle_start_mission():
@@ -165,7 +180,7 @@ def telemetry_broadcast_loop():
             try:
                 # Handle telemetry packets
                 packet = telemetry_handler.get_latest_packet()
-                if packet:
+                if packet and packet.get('type') != 'log':  # Ensure we don't emit log messages as telemetry
                     packet_count += 1
                     
                     # Store data if mission is active

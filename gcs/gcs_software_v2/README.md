@@ -1,88 +1,125 @@
-# CanSat Ground Control Station (GCS)
+# CanSat Ground Control Station V2 - Professional Web Interface
 
-A modern Ground Control Station for CanSat missions with real-time telemetry monitoring.
+Modern Next.js-based Ground Control Station for real-time CanSat telemetry monitoring with advanced visualization and data logging capabilities.
 
-## CanSat Telemetry Data Format Reference
+## 🚀 Professional Mission Control System
 
-### Overview
-This section describes the complete data format for telemetry transmitted from the CanSat via LoRa to the Ground Control Station (GCS).
+### Advanced Features
+- **Real-time Telemetry**: Live 23-field CSV data processing at 10Hz
+- **Interactive Dashboard**: Modern React components with real-time charts
+- **Data Visualization**: Altitude, GPS tracking, sensor graphs, and flight state monitoring
+- **Mission Logging**: Complete flight data storage and export capabilities
+- **Professional UI**: Competition-grade interface for mission monitoring
 
----
+## 📡 Enhanced Communication System
 
-## Error Code System
+### LoRa Reception & Processing
+- **435MHz Reception**: High-speed telemetry from Secondary ESP32 LoRa transmission
+- **Connection Monitoring**: Real-time link status with 30-second timeout detection
+- **Data Validation**: Complete 23-field CSV format verification and error handling
+- **Signal Quality**: RSSI/SNR monitoring for link assessment
 
-The error code system uses **concatenated numbers** where each digit represents a specific subsystem error.
+### Data Stream Types
+1. **Primary Telemetry**: 23-field CSV format with complete sensor suite data
+2. **System Status**: Operational messages from CanSat subsystems
+3. **Error Reporting**: Real-time system health monitoring with concatenated error codes
+4. **Flight State**: Mission phase tracking from BOOT through IMPACT
 
-### Error Code Mapping
+## 📊 Complete Telemetry Specification
 
-| Error ID | Subsystem | Description |
-|----------|-----------|-------------|
-| **1** | MPU6050 | Accelerometer/Gyroscope sensor failure (invalid data) |
-| **2** | BMP280 | Primary barometric pressure sensor failure (invalid data) |
-| **3** | SD Card | SD card access failure (file not found) |
-| **5** | GNSS/GPS | GPS failure (no valid fix, old data, or <4 satellites) |
-| **6** | PID | PID control system error |
-| **7** | Camera | Camera module error (placeholder) |
-| **8** | Serial | UART communication failure with Secondary ESP32 |
-| **9** | LoRa | LoRa transmission error |
-| **10** | BMP390 | Secondary barometric pressure sensor failure |
-
-### Error Code Format Examples
-
-- **"0"** = No errors (all systems OK)
-- **"1"** = Only MPU6050 error
-- **"23"** = BMP280 + SD Card errors
-- **"1510"** = MPU6050 + GNSS + BMP390 errors
-- **"12389"** = MPU6050, BMP280, SD Card, Serial, and LoRa all have errors
-
-> **Note:** Multiple errors are concatenated. Two-digit error code "10" must be parsed correctly.
+### Current System Architecture
+- **Primary ESP32**: Flight computer with GPS L89, MPU6050, BMP280 backup, SD logging, flight state management
+- **Secondary ESP32**: BMP390 primary sensor, LoRa 435MHz transmission, servo control, UART relay
+- **Data Rate**: 10Hz telemetry (100ms intervals) with 50ms UART synchronization
+- **Recovery Features**: Dual sensor failover (BMP390→BMP280), flight state recovery from CSV
 
 ---
 
-## CSV Data Format (23 Fields)
+## 🚨 Enhanced Error Code System
 
-Data transmitted via LoRa in exact order:
+**Concatenated error monitoring** for comprehensive system health tracking:
+
+### Current Error Mapping
+
+| Error ID | Subsystem | Description | Critical Level |
+|----------|-----------|-------------|----------------|
+| **1** | MPU6050 | Accelerometer/Gyroscope failure (invalid/old data) | High |
+| **2** | BMP280 | Backup pressure sensor failure (failover active) | Medium |
+| **3** | SD Card | Telemetry logging failure (file system errors) | High |
+| **5** | GPS L89 | GPS communication failure (<4 satellites/timeout) | Medium |
+| **6** | PID | PID control system malfunction | Medium |
+| **7** | Camera | Imaging system error (placeholder for future) | Low |
+| **8** | Serial | UART2 communication failure (Primary↔Secondary) | Critical |
+| **9** | LoRa | Transmission failure (435MHz link down) | Critical |
+| **10** | BMP390 | Primary altitude sensor failure (triggers failover) | High |
+
+### Advanced Error Examples
+
+- **"0"** = All systems operational (green status)
+- **"10"** = BMP390 failure → Automatic BMP280 failover with CSV calibration
+- **"28"** = BMP280 backup + Serial communication failures (critical)
+- **"1358"** = MPU6050 + SD + GPS + Serial failures (mission critical)
+- **"10123"** = Multiple system failures requiring immediate attention
+
+> **Critical**: Error parsing must handle two-digit codes correctly. "10" ≠ "1" + "0"
+
+---
+
+## 📋 Enhanced CSV Data Format (23 Fields + GCS Metadata)
+
+**Core telemetry transmitted via 435MHz LoRa** from Secondary ESP32:
 
 | # | Field Name | Source | Format | Description | Example |
 |---|------------|--------|--------|-------------|---------|
-| **1** | TEAM_ID | Constant | String | Team identifier | 2024-ASI-CANSAT-049 |
-| **2** | TIMESTAMP | millis() | Integer (ms) | Time since boot | 12345 |
-| **3** | PACKET_COUNT | Counter | Integer | Packet sequence number | 100 |
-| **4** | ALTITUDE | BMP390/BMP280 | Float (2 decimals) | Altitude in meters (from BMP390 if available, else BMP280) | 125.30 |
-| **5** | PRESSURE | BMP390/BMP280 | Float (2 decimals) | Atmospheric pressure in hPa | 1013.25 |
-| **6** | TEMP | BMP390/BMP280 | Float (2 decimals) | Temperature in °C | 24.50 |
-| **7** | VOLTAGE | Secondary ESP32 | Float (2 decimals) | Battery voltage in Volts | 7.84 |
-| **8** | GNSS_TIME | GPS | String | GPS time (HH:MM:SS) | 12:34:56 |
-| **9** | GNSS_LAT | GPS | Float (6 decimals) | Latitude in degrees | 12.345678 |
-| **10** | GNSS_LONG | GPS | Float (6 decimals) | Longitude in degrees | 77.654321 |
-| **11** | GNSS_ALT | GPS | Float (2 decimals) | GPS altitude in meters | 125.00 |
-| **12** | GNSS_SATS | GPS | Integer | Number of satellites | 8 |
-| **13** | ACCEL_X | MPU6050 | Float (3 decimals) | X-axis acceleration in g | 0.120 |
-| **14** | ACCEL_Y | MPU6050 | Float (3 decimals) | Y-axis acceleration in g | -0.050 |
-| **15** | ACCEL_Z | MPU6050 | Float (3 decimals) | Z-axis acceleration in g | 9.810 |
-| **16** | GYRO_X | MPU6050 | Float (3 decimals) | X-axis rotation in rad/s | 0.010 |
-| **17** | GYRO_Y | MPU6050 | Float (3 decimals) | Y-axis rotation in rad/s | -0.020 |
-| **18** | GYRO_Z | MPU6050 | Float (3 decimals) | Z-axis rotation in rad/s | 0.030 |
-| **19** | GYRO_SPIN_RATE | PID Output | Float (2 decimals) | PID output value (replaces spin rate) | 0.00 |
-| **20** | FLIGHT_STATE | State Machine | Integer (0-7) | Current flight state (see below) | 2 |
-| **21** | SERVO_STATUS | Servo | Integer (0 or 1) | Parachute servo: 0=closed, 1=open | 0 |
-| **22** | ERROR_CODE | Error System | String | Concatenated error IDs (see above) | 0 or 12389 |
-| **23** | GNSS_SPEED | MPU6050 | Float (2 decimals) | Speed calculated from acceleration in m/s | 0.15 |
+| **1** | TEAM_ID | Constant | String | Competition team identifier | 1013 |
+| **2** | MISSION_TIME | millis() | String (HH:MM:SS.sss) | Mission elapsed time with milliseconds | 10:34:23.456 |
+| **3** | PACKET_COUNT | Counter | Integer | Sequential packet number | 1254 |
+| **4** | MODE | State Machine | Integer (0-7) | Current flight mode | 3 |
+| **5** | STATE | Descriptor | String | Flight state name | ASCENT |
+| **6** | ALTITUDE | BMP390/BMP280 | Float (1 decimal) | Primary altitude (BMP390) with BMP280 failover | 1250.4 |
+| **7** | AIR_SPEED | Calculated | Float (1 decimal) | Calculated airspeed in m/s | 15.2 |
+| **8** | HS_DEPLOYED | Deployment | Char | Heat shield status (P=deployed, N=not) | N |
+| **9** | PC_DEPLOYED | Deployment | Char | Parachute status (P=deployed, N=not) | N |
+| **10** | MAST_RAISED | Deployment | Char | Mast deployment (P=raised, N=not) | N |
+| **11** | TEMPERATURE | BMP390/BMP280 | Float (1 decimal) | Atmospheric temperature in °C | 22.5 |
+| **12** | VOLTAGE | Secondary ESP32 | Float (1 decimal) | Battery voltage in Volts | 7.2 |
+| **13** | PRESSURE | BMP390/BMP280 | Float (1 decimal) | Atmospheric pressure in hPa | 1013.2 |
+| **14** | GPS_TIME | GPS L89 | String | GPS UTC time (HH:MM:SS) | 10:34:22 |
+| **15** | GPS_ALTITUDE | GPS L89 | Float (1 decimal) | GPS altitude in meters | 1248.7 |
+| **16** | GPS_LATITUDE | GPS L89 | Float (6 decimals) | Latitude coordinate | 40.712800 |
+| **17** | GPS_LONGITUDE | GPS L89 | Float (6 decimals) | Longitude coordinate | -74.006000 |
+| **18** | GPS_SATELLITES | GPS L89 | Integer | Number of connected satellites | 8 |
+| **19** | TILT_X | MPU6050 | Float (1 decimal) | X-axis tilt angle in degrees | 5.2 |
+| **20** | TILT_Y | MPU6050 | Float (1 decimal) | Y-axis tilt angle in degrees | -2.1 |
+| **21** | ROTATION_Z | MPU6050 | Float (1 decimal) | Z-axis angular velocity in °/s | 45.3 |
+| **22** | CMD_ECHO | Command | String | Ground command acknowledgment | NONE |
+| **23** | ERROR_CODES | Error System | String | Concatenated error status codes | (empty for no errors) |
+
+### GCS Enhanced Format (26 Fields Total)
+**Additional fields added by Ground Control Station:**
+
+| # | Field Name | Source | Format | Description | Example |
+|---|------------|--------|--------|-------------|---------|
+| **24** | RECORDING_TIME | GCS | ISO Timestamp | GCS reception timestamp | 2025-01-20T15:45:32.123Z |
+| **25** | RSSI | LoRa | Float (1 decimal) | Received Signal Strength Indicator (dBm) | -65.0 |
+| **26** | SNR | LoRa | Float (1 decimal) | Signal-to-Noise Ratio (dB) | 8.5 |
 
 ---
 
-## Flight States
+## 🛩️ Advanced Flight State System
 
-| State Value | State Name | Description |
-|-------------|------------|-------------|
-| **0** | BOOT | System initializing, sensors starting up |
-| **1** | TEST_MODE | Sensors initialized, pre-flight testing |
-| **2** | LAUNCH_PAD | Ready for launch, waiting on pad |
-| **3** | ASCENT | Rocket ascending (altitude > 50m) |
-| **4** | ROCKET_DEPLOY | Parachute deployed at apogee (altitude > 700m) |
-| **5** | DESCENT | Descending with parachute |
-| **6** | AEROBRAKE_RELEASE | Aerobrake released (altitude < 50% max) |
-| **7** | IMPACT | Landed, recovery beeper active |
+Enhanced state machine with recovery support for power failures:
+
+| State | Name | Trigger Conditions | Recovery Features |
+|-------|------|-------------------|-------------------|
+| **0** | BOOT | System initialization (5 seconds) | Reads last state from CSV for recovery |
+| **1** | TEST_MODE | Post-initialization testing | Pre-flight sensor validation |
+| **2** | LAUNCH_PAD | Ready for launch, stable altitude | Baseline altitude establishment |
+| **3** | ASCENT | Altitude > 50m above baseline | Active flight monitoring |
+| **4** | ROCKET_DEPLOY | Altitude > 700m (parachute trigger) | Apogee detection and deployment |
+| **5** | DESCENT | Descending with deployed parachute | Descent rate monitoring |
+| **6** | AEROBRAKE_RELEASE | Altitude < 50% of max altitude | Secondary deployment system |
+| **7** | IMPACT | Landed (stable low altitude) | Recovery beeper activation |
 
 ---
 
@@ -142,6 +179,26 @@ function parseErrorCodes(errorStr: string): string[] {
   
   return codes
 }
+```
+
+## LoRa Transmission Format
+
+Data is received by GCS in the following format:
+
+```
+RX #XXX @ XXXXX ms | XXX bytes | RSSI=XX dB | SNR=X.X | CSV:TEAM_ID,TIMESTAMP,PACKET_COUNT,...
+```
+
+**Example:**
+```
+RX #123 @ 45678 ms | 150 bytes | RSSI=-45 dB | SNR=8.5 | CSV:2024-ASI-CANSAT-049,12345,100,125.30,1013.25,24.50,7.84,12:34:56,12.345678,77.654321,125.00,8,0.120,-0.050,9.810,0.010,-0.020,0.030,0.00,2,0,0,0.15
+```
+
+**STATUS Messages:**
+```
+[STATUS] System operational
+[STATUS] GPS acquiring fix
+[STATUS] Landing detected
 ```
 
 ### Field Name Mapping

@@ -143,10 +143,17 @@ struct SystemErrors
 // System status
 bool sensorsOK = false;
 bool gpsLocked = false;
+bool gpsStable = false;        // Stable GPS lock (with hysteresis)
 bool sdCardOK = false;
 bool bmp390Ready = false;        // Track if BMP390 from secondary is available
 bool usingBMP390 = false;        // Track which sensor we're using for altitude
 float lastKnownAltitude = 0.0;   // Last known good altitude for fallback calibration
+
+// GPS stability tracking
+unsigned long gpsLockTime = 0;   // When GPS first achieved lock
+unsigned long gpsLostTime = 0;   // When GPS was lost
+const unsigned long GPS_LOCK_CONFIRM_TIME = 3000;  // 3 seconds to confirm stable lock
+const unsigned long GPS_LOST_CONFIRM_TIME = 10000; // 10 seconds to confirm lock lost
 
 // Timing variables
 unsigned long lastDataCollection = 0;
@@ -711,14 +718,56 @@ void readGPS()
     }
   }
 
-  // Update GPS lock status - locked if we have valid location data and satellites
-  if (gps.location.isValid() && gps.location.age() < 5000 && primaryData.gnssSats >= 4)
+  // GPS LOCK DETECTION WITH STABILITY (HYSTERESIS)
+  // Basic GPS lock check
+  bool currentGpsLock = (gps.location.isValid() && gps.location.age() < 5000 && primaryData.gnssSats >= 4);
+  
+  unsigned long currentTime = millis();
+  
+  if (currentGpsLock && !gpsLocked)
   {
-    gpsLocked = true;
+    // GPS just achieved lock - start confirmation timer
+    if (gpsLockTime == 0)
+    {
+      gpsLockTime = currentTime;
+    }
+    else if (currentTime - gpsLockTime >= GPS_LOCK_CONFIRM_TIME)
+    {
+      // GPS has been locked for confirmation period - confirm stable lock
+      gpsLocked = true;
+      gpsStable = true;
+      gpsLockTime = 0;
+      gpsLostTime = 0;
+    }
   }
-  else
+  else if (!currentGpsLock && gpsLocked)
   {
-    gpsLocked = false;
+    // GPS just lost lock - start confirmation timer
+    if (gpsLostTime == 0)
+    {
+      gpsLostTime = currentTime;
+    }
+    else if (currentTime - gpsLostTime >= GPS_LOST_CONFIRM_TIME)
+    {
+      // GPS has been lost for confirmation period - confirm lock lost
+      gpsLocked = false;
+      gpsStable = false;
+      gpsLockTime = 0;
+      gpsLostTime = 0;
+    }
+    // During lost confirmation period, maintain current lock status
+  }
+  else if (currentGpsLock && gpsLocked)
+  {
+    // GPS is stable and locked - reset any lost timer
+    gpsLostTime = 0;
+    gpsStable = true;
+  }
+  else if (!currentGpsLock && !gpsLocked)
+  {
+    // GPS is stable and not locked - reset any lock timer
+    gpsLockTime = 0;
+    gpsStable = false;
   }
 }
 
@@ -1173,8 +1222,8 @@ void handleLEDs()
     digitalWrite(LED_RED_PIN, LOW);
   }
   
-  // 2. YELLOW LED: BLINKING when GPS not locked (after boot)
-  if (bootComplete && !gpsLocked)
+  // 2. YELLOW LED: BLINKING when GPS not stable (after boot)
+  if (bootComplete && !gpsStable)
   {
     if (currentTime - yellowBlinkTimer >= LED_BLINK_INTERVAL)
     {
@@ -1188,9 +1237,9 @@ void handleLEDs()
     digitalWrite(LED_YELLOW_PIN, LOW);
   }
   
-  // 3. GREEN LED: Quick blink when everything is OK (GPS locked + SD card OK)
+  // 3. GREEN LED: Quick blink when everything is OK (GPS stable + SD card OK)
   // Pattern: 25ms ON, 75ms OFF, repeating every 1 second (matches Secondary D2)
-  if (bootComplete && gpsLocked && sdCardOK)
+  if (bootComplete && gpsStable && sdCardOK)
   {
     if (greenBlinkTimer == 0)
     {
@@ -1303,7 +1352,7 @@ void handleBuzzer()
   }
   
   // 3. All OK beeps (triple beep when everything is OK)
-  if (bootComplete && gpsLocked && sdCardOK)
+  if (bootComplete && gpsStable && sdCardOK)
   {
     if (!allOkBeepDone)
     {
@@ -1344,8 +1393,25 @@ void handleBuzzer()
   }
   else
   {
-    // Reset the all OK beep flag if conditions are no longer met
-    allOkBeepDone = false;
+    // Only reset beep flag if GPS has been stably lost for a significant time
+    // This prevents repeated beeps due to temporary GPS fluctuations
+    static unsigned long lastStableLossTime = 0;
+    if (!gpsStable && bootComplete)
+    {
+      if (lastStableLossTime == 0)
+      {
+        lastStableLossTime = currentTime;
+      }
+      else if (currentTime - lastStableLossTime > 30000) // 30 seconds of stable loss
+      {
+        allOkBeepDone = false;
+        lastStableLossTime = 0;
+      }
+    }
+    else if (gpsStable)
+    {
+      lastStableLossTime = 0; // Reset timer when GPS is stable
+    }
   }
   
   // 4. Recovery beeps (continuous long beeps after landing)
@@ -1714,6 +1780,8 @@ void loop()
     
     Serial.print("[GPS] Lock: ");
     Serial.print(gpsLocked ? "YES" : "NO");
+    Serial.print(" | Stable: ");
+    Serial.print(gpsStable ? "YES" : "NO");
     Serial.print(" | Sats: ");
     Serial.print(primaryData.gnssSats);
     Serial.print(" | Lat: ");
@@ -1731,9 +1799,9 @@ void loop()
     Serial.print("[LED] R:");
     Serial.print(!bootComplete || !sdCardOK ? "ON" : "OFF");
     Serial.print(" Y:");
-    Serial.print(bootComplete && !gpsLocked ? "BLINK" : "OFF");
+    Serial.print(bootComplete && !gpsStable ? "BLINK" : "OFF");
     Serial.print(" G:");
-    Serial.println(bootComplete && gpsLocked && sdCardOK ? "BLINK" : "OFF");
+    Serial.println(bootComplete && gpsStable && sdCardOK ? "BLINK" : "OFF");
     
     Serial.println("==================================\n");
     lastDebugOutput = currentTime;

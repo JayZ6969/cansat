@@ -17,12 +17,14 @@ uint32_t rxCount = 0;
 void setup() {
   Serial.begin(115200);
   delay(50);
-  Serial.println("MAXIMUM SPEED LoRa RX starting...");
+  
+  Serial.print("[LOGS] LoRa receiver (435MHz)...");
 
   SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI);
   LoRa.setPins(LORA_SS, LORA_RST, LORA_DIO0);
   if (!LoRa.begin(LORA_FREQ)) {
-    Serial.println("LoRa init failed - check wiring and module");
+    Serial.println(" FAILED");
+    Serial.println("[LOGS] Check wiring and module");
     while (1) delay(1000);
   }
   
@@ -33,7 +35,8 @@ void setup() {
   LoRa.setPreambleLength(6);      // Minimum preamble
   LoRa.setSyncWord(0x12);
   
-  Serial.println("GCS receiver optimized for MAXIMUM SPEED reception");
+  Serial.println(" OK (SF7, 250kHz)");
+  Serial.println("[LOGS] Ground station ready");
 }
 
 void loop() {
@@ -42,16 +45,27 @@ void loop() {
     rxCount++;
     String payload = "";
     while (LoRa.available()) payload += (char)LoRa.read();
-    int rssi = LoRa.packetRssi();
-    float snr = LoRa.packetSnr();
-    unsigned long now = millis();
-    Serial.printf("RX #%lu @ %lu ms | %d bytes | RSSI=%d dB | SNR=%.1f | %s\n", 
-                  (unsigned long)rxCount, now, packetSize, rssi, snr, payload.c_str());
+    
+    // Print received CSV data with RSSI and SNR on same line
+    Serial.print("[CSV] " + payload);
+    Serial.print(" | RSSI: ");
+    Serial.print(LoRa.packetRssi());
+    Serial.print(" dBm | SNR: ");
+    Serial.print(LoRa.packetSnr());
+    Serial.println(" dB");
   }
   
-  // Periodic heartbeat every 10 seconds
-  if (millis() - lastHeartbeat > 10000) {
-    Serial.printf("GCS alive - received %lu packets\n", (unsigned long)rxCount);
+  // Periodic status every 30 seconds (less frequent than Primary/Secondary)
+  if (millis() - lastHeartbeat > 30000) {
+    int rssi = LoRa.packetRssi();
+    float snr = LoRa.packetSnr();
+    Serial.print("[LOGS] Packets: ");
+    Serial.print(rxCount);
+    Serial.print(" | RSSI: ");
+    Serial.print(rssi);
+    Serial.print(" dB | SNR: ");
+    Serial.print(snr, 1);
+    Serial.println(" dB");
     lastHeartbeat = millis();
   }
   

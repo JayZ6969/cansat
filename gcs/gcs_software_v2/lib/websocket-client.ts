@@ -1,6 +1,8 @@
 import type { TelemetryData } from "./telemetry-types"
 import { io, Socket } from "socket.io-client"
 import { mapPythonToTelemetry } from "./telemetry-mapper"
+import NotificationService from "./notification-service"
+import { addTerminalLog } from "@/components/terminal"
 
 export type WebSocketEventType = "connected" | "disconnected" | "data" | "error" | "serial_status" | "log_message"
 
@@ -38,6 +40,11 @@ export class WebSocketClient {
           console.log("[GCS] Socket.IO connected to backend")
           this.reconnectAttempts = 0
           this.notifyListeners("connected", { type: "connected" })
+          addTerminalLog({
+            source: 'System',
+            level: 'INFO',
+            message: 'WebSocket connected to backend'
+          })
           resolve()
         })
 
@@ -52,23 +59,88 @@ export class WebSocketClient {
         this.socket.on("serial_status", (statusData: any) => {
           console.log("[GCS] Serial status update:", statusData)
           this.notifyListeners("serial_status", { type: "serial_status", data: statusData })
+          
+          // Add notification and terminal log for status changes
+          if (statusData.connected) {
+            NotificationService.showConnectionSuccess(statusData.port || 'Serial Port')
+            addTerminalLog({
+              source: 'System',
+              level: 'INFO',
+              message: `Connected to ${statusData.port || 'Serial Port'}`
+            })
+          } else {
+            NotificationService.showDisconnected()
+            addTerminalLog({
+              source: 'System',
+              level: 'INFO',
+              message: 'Serial port disconnected'
+            })
+          }
         })
 
         // Listen for log messages from backend
         this.socket.on("log_message", (logData: any) => {
           console.log("[GCS] Log message:", logData.log_message)
           this.notifyListeners("log_message", { type: "log_message", data: logData })
+          
+          // Parse log message and add to terminal
+          const message = logData.log_message || ''
+          let source: 'GCS' | 'CanSat' | 'System' = 'System'
+          let level: 'INFO' | 'WARNING' | 'ERROR' | 'STATUS' | 'DEBUG' = 'INFO'
+          
+          // Determine source and level from message content
+          if (message.includes('[STATUS]')) {
+            level = 'STATUS'
+            source = 'CanSat'
+          } else if (message.includes('[ERROR]')) {
+            level = 'ERROR'
+            source = message.includes('GCS') ? 'GCS' : 'CanSat'
+          } else if (message.includes('[WARNING]')) {
+            level = 'WARNING'
+            source = message.includes('GCS') ? 'GCS' : 'CanSat'
+          } else if (message.includes('[INFO]')) {
+            level = 'INFO'
+            source = message.includes('GCS') ? 'GCS' : 'CanSat'
+          } else if (message.includes('CSV:') || message.includes('RX #')) {
+            level = 'DEBUG'
+            source = 'CanSat'
+          }
+          
+          // Add to terminal
+          addTerminalLog({
+            source,
+            level,
+            message: message,
+            raw: message
+          })
+          
+          // Show notification for important messages
+          if (level === 'ERROR' || level === 'WARNING' || level === 'STATUS') {
+            const notificationSource = source === 'System' ? 'GCS' : source
+            NotificationService.showLogMessage(notificationSource, message, level)
+          }
         })
 
         this.socket.on("connect_error", (error) => {
           console.error("[GCS] Socket.IO connection error:", error)
           this.notifyListeners("error", { type: "error", data: "Connection error" })
+          NotificationService.showConnectionError("Failed to connect to backend service")
+          addTerminalLog({
+            source: 'System',
+            level: 'ERROR',
+            message: `Backend connection failed: ${error.message || error}`
+          })
           reject(error)
         })
 
         this.socket.on("disconnect", (reason) => {
           console.log("[GCS] Socket.IO disconnected:", reason)
           this.notifyListeners("disconnected", { type: "disconnected" })
+          addTerminalLog({
+            source: 'System',
+            level: 'WARNING',
+            message: `Backend connection lost: ${reason}`
+          })
           if (!this.isManuallyDisconnected && reason === "io server disconnect") {
             // Server initiated disconnect, attempt reconnect
             this.attemptReconnect()
@@ -76,8 +148,13 @@ export class WebSocketClient {
         })
 
         this.socket.on("error", (error) => {
-          console.error("[GCS] Socket.IO error:", error)
-          this.notifyListeners("error", { type: "error", data: error })
+          // Only log errors if we're not in the middle of disconnecting
+          if (!this.isManuallyDisconnected) {
+            console.error("[GCS] Socket.IO error:", error)
+            this.notifyListeners("error", { type: "error", data: error })
+          } else {
+            console.log("[GCS] Socket.IO error during disconnect (expected):", error)
+          }
         })
 
       } catch (error) {

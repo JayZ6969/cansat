@@ -117,11 +117,8 @@ export function GPSMap({ telemetry }: GPSMapProps) {
     const lat = telemetry.latitude
     const lng = telemetry.longitude
 
-    console.log('GPS Map - Received coordinates:', { lat, lng })
-
     // Filter out invalid coordinates using utility function
     if (!isValidGPSCoordinate(lat, lng)) {
-      console.log('GPS Map - Ignoring invalid coordinates:', { lat, lng })
       return
     }
 
@@ -166,8 +163,6 @@ export function GPSMap({ telemetry }: GPSMapProps) {
       launchMarkerRef.current = LRef.current.marker(newPoint, { icon: launchIcon })
         .addTo(mapInstanceRef.current)
         .bindPopup('Launch Point')
-      
-      console.log('GPS Map - Launch point set:', { lat, lng })
     }
 
     // Add to flight path and update count
@@ -189,6 +184,8 @@ export function GPSMap({ telemetry }: GPSMapProps) {
     }
   }, [telemetry])
 
+  const hasValidGPS = telemetry && isValidGPSCoordinate(telemetry.latitude, telemetry.longitude)
+
   return (
     <Card className="p-4 h-full flex flex-col">
       <div className="mb-3 flex items-center justify-between shrink-0">
@@ -196,8 +193,17 @@ export function GPSMap({ telemetry }: GPSMapProps) {
           <h3 className="text-sm font-semibold text-foreground">GPS Map</h3>
           <p className="text-xs text-muted-foreground">Flight path visualization</p>
         </div>
-        <div className="rounded bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
-          {waypointCount} waypoints
+        <div className="flex items-center space-x-2">
+          <div className={`rounded px-2 py-1 text-xs font-medium ${
+            hasValidGPS 
+              ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" 
+              : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+          }`}>
+            {hasValidGPS ? "GPS Lock" : "No GPS"}
+          </div>
+          <div className="rounded bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
+            {waypointCount} waypoints
+          </div>
         </div>
       </div>
       <div 
