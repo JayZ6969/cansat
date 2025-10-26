@@ -143,15 +143,15 @@ struct SystemErrors
 // System status
 bool sensorsOK = false;
 bool gpsLocked = false;
-bool gpsStable = false;        // Stable GPS lock (with hysteresis)
+bool gpsStable = false; // Stable GPS lock (with hysteresis)
 bool sdCardOK = false;
-bool bmp390Ready = false;        // Track if BMP390 from secondary is available
-bool usingBMP390 = false;        // Track which sensor we're using for altitude
-float lastKnownAltitude = 0.0;   // Last known good altitude for fallback calibration
+bool bmp390Ready = false;      // Track if BMP390 from secondary is available
+bool usingBMP390 = false;      // Track which sensor we're using for altitude
+float lastKnownAltitude = 0.0; // Last known good altitude for fallback calibration
 
 // GPS stability tracking
-unsigned long gpsLockTime = 0;   // When GPS first achieved lock
-unsigned long gpsLostTime = 0;   // When GPS was lost
+unsigned long gpsLockTime = 0;                     // When GPS first achieved lock
+unsigned long gpsLostTime = 0;                     // When GPS was lost
 const unsigned long GPS_LOCK_CONFIRM_TIME = 3000;  // 3 seconds to confirm stable lock
 const unsigned long GPS_LOST_CONFIRM_TIME = 10000; // 10 seconds to confirm lock lost
 
@@ -186,17 +186,17 @@ int sdErrorBeepCount = 0;
 int allOkBeepCount = 0;
 
 // Data collection intervals - OPTIMIZED FOR MAXIMUM SPEED
-const unsigned long DATA_INTERVAL = 100;         // 10Hz data collection (maximum speed)
-const unsigned long UART_INTERVAL = 50;          // UART request every 50ms (fast sync)
-const unsigned long STATE_UPDATE_INTERVAL = 100; // State check every 100ms
+const unsigned long DATA_INTERVAL = 100;          // 10Hz data collection (maximum speed)
+const unsigned long UART_INTERVAL = 50;           // UART request every 50ms (fast sync)
+const unsigned long STATE_UPDATE_INTERVAL = 100;  // State check every 100ms
 const unsigned long DEBUG_OUTPUT_INTERVAL = 5000; // Debug output every 5 seconds
 
 // NEW LED/BUZZER TIMING CONSTANTS
-const unsigned long LED_BLINK_INTERVAL = 500;    // 500ms blink cycle (on/off)
-const unsigned long GREEN_BLINK_DURATION = 100;  // 100ms green blink when writing data
-const unsigned long BUZZER_BEEP_SHORT = 200;     // 200ms short beep
-const unsigned long BUZZER_BEEP_LONG = 1000;     // 1000ms long beep for recovery
-const unsigned long BUZZER_GAP = 300;            // 300ms gap between beeps
+const unsigned long LED_BLINK_INTERVAL = 500;      // 500ms blink cycle (on/off)
+const unsigned long GREEN_BLINK_DURATION = 100;    // 100ms green blink when writing data
+const unsigned long BUZZER_BEEP_SHORT = 200;       // 200ms short beep
+const unsigned long BUZZER_BEEP_LONG = 1000;       // 1000ms long beep for recovery
+const unsigned long BUZZER_GAP = 300;              // 300ms gap between beeps
 const unsigned long RECOVERY_BEEP_INTERVAL = 2000; // 2s between recovery beeps
 
 // Flight logic variables
@@ -206,9 +206,14 @@ float currentAltitude = 0.0;
 unsigned long ascentStartTime = 0;
 bool servoOpen = false; // Track servo position
 
+// TEST ALTITUDE ARRAY
+const float testAltitudes[] = {0, 2, 8, 15, 28, 45, 67, 89, 115, 148, 182, 221, 265, 312, 358, 411, 468, 522, 581, 638, 695, 748, 802, 861, 918, 972, 1024, 1071, 1115, 1158, 1189, 1205, 1198, 1192, 1187, 1179, 1165, 1151, 1138, 1122, 1108, 1089, 1074, 1055, 1041, 1022, 1008, 985, 968, 952, 931, 915, 894, 878, 859, 843, 821, 805, 784, 768, 749, 733, 711, 695, 674, 658, 637, 621, 605, 602, 599, 595, 591, 588, 584, 581, 577, 574, 570, 567, 563, 560, 556, 553, 549, 546, 542, 539, 535, 532, 528, 525, 521, 518, 514, 511, 507, 504, 500, 497, 493, 490, 487, 483, 480, 476, 473, 469, 466, 463, 459, 456, 452, 449, 446, 442, 439, 435, 432, 429, 425, 422, 418, 415, 412, 408, 405, 402, 398, 395, 392, 388, 385, 382, 378, 375, 372, 368, 365, 362, 358, 355, 352, 348, 345, 342, 339, 335, 332, 329, 326, 322, 319, 316, 313, 309, 306, 303, 300, 296, 293, 290, 287, 284, 281, 277, 274, 271, 268, 265, 262, 259, 255, 252, 249, 246, 243, 240, 237, 234, 231, 227, 224, 221, 218, 215, 212, 209, 206, 203, 200, 197, 194, 191, 188, 185, 181, 178, 175, 172, 169, 166, 163, 160, 157, 154, 151, 148, 145, 142, 139, 136, 133, 130, 127, 124, 121, 118, 115, 112, 109, 106, 103, 100, 97, 94, 91, 88, 85, 83, 80, 77, 74, 71, 68, 65, 62, 59, 56, 54, 51, 48, 45, 42, 39, 37, 34, 31, 28, 25, 23, 20, 17, 14, 12, 9, 6, 4, 1, 0};
+const int testAltitudesCount = sizeof(testAltitudes) / sizeof(testAltitudes[0]);
+int testAltitudeIndex = 0;
+
 // BMP280 baseline calibration
 float baselineAltitudeBMP280 = 0.0;
-bool bmp280Calibrated = false;    // Track if BMP280 has been calibrated
+bool bmp280Calibrated = false; // Track if BMP280 has been calibrated
 
 // PID Controller Variables (for logging/telemetry only, not for hardware control)
 float pidSetpoint = 0.0;       // Target spin rate (0 = stable, no rotation)
@@ -248,7 +253,7 @@ bool writeToSD(String csvRow);
 // ==================== FLIGHT STATE MANAGEMENT ====================
 void updateFlightState();
 FlightState readLastFlightStateFromCSV();
-const char* flightStateToString(FlightState state);
+const char *flightStateToString(FlightState state);
 FlightState stringToFlightState(String stateStr);
 
 // ==================== NEW LED AND BUZZER CONTROL ====================
@@ -331,14 +336,14 @@ bool initializeI2C()
 
 bool initializeSD()
 {
-  // GPS INTERFERENCE MITIGATION: 
+  // GPS INTERFERENCE MITIGATION:
   // 1. Delay before SD init to let GPS stabilize first
   delay(2000);
-  
+
   // 2. Lower SPI speed to reduce electromagnetic interference
   SPI.begin(SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, SD_CS_PIN);
   SPI.setFrequency(400000); // 400kHz - much slower to reduce interference
-  
+
   if (!SD.begin(SD_CS_PIN, SPI, 400000)) // Force low frequency
   {
     Serial.println("[ERROR] SD Card init failed");
@@ -423,7 +428,7 @@ float readLastAltitudeFromCSV()
   }
 
   String lastLine = "";
-  
+
   // OPTIMIZED: Read from end of file backwards to find last valid line
   size_t fileSize = file.size();
   if (fileSize == 0)
@@ -431,18 +436,18 @@ float readLastAltitudeFromCSV()
     file.close();
     return 0.0;
   }
-  
+
   // Start reading from end, going backwards in chunks
   const int CHUNK_SIZE = 512;
   char buffer[CHUNK_SIZE + 1];
   int bytesToRead = min(CHUNK_SIZE, (int)fileSize);
-  
+
   file.seek(fileSize - bytesToRead);
   int bytesRead = file.readBytes(buffer, bytesToRead);
   buffer[bytesRead] = '\0';
-  
+
   String fileEnd = String(buffer);
-  
+
   // Find last complete line (ignore incomplete last line if any)
   int lastNewline = fileEnd.lastIndexOf('\n');
   if (lastNewline > 0)
@@ -458,7 +463,7 @@ float readLastAltitudeFromCSV()
       lastLine = fileEnd.substring(0, lastNewline);
     }
   }
-  
+
   file.close();
   lastLine.trim();
 
@@ -471,7 +476,7 @@ float readLastAltitudeFromCSV()
   int commaCount = 0;
   int startIndex = 0;
   int endIndex = 0;
-  
+
   for (int i = 0; i < lastLine.length(); i++)
   {
     if (lastLine.charAt(i) == ',')
@@ -506,7 +511,7 @@ void calibrateBMP280ToLastAltitude()
 {
   // Read last known altitude from CSV
   float lastAlt = readLastAltitudeFromCSV();
-  
+
   if (lastAlt == 0.0)
   {
     Serial.println("[FALLBACK] Using standard BMP280 calibration");
@@ -516,7 +521,7 @@ void calibrateBMP280ToLastAltitude()
 
   // Read current BMP280 altitude
   float currentBMP280Reading = bmp280.readAltitude(1013.25);
-  
+
   if (isnan(currentBMP280Reading))
   {
     Serial.println("[ERROR] BMP280 read failed");
@@ -527,7 +532,7 @@ void calibrateBMP280ToLastAltitude()
   // Calculate baseline to make BMP280 match last known altitude
   baselineAltitudeBMP280 = currentBMP280Reading - lastAlt;
   bmp280Calibrated = true;
-  
+
   Serial.print("[CALIB] BMP280 matched to ");
   Serial.print(lastAlt);
   Serial.println(" m");
@@ -535,43 +540,60 @@ void calibrateBMP280ToLastAltitude()
 
 // ==================== FLIGHT STATE RECOVERY FUNCTIONS ====================
 
-const char* flightStateToString(FlightState state)
+const char *flightStateToString(FlightState state)
 {
   switch (state)
   {
-    case BOOT: return "BOOT";
-    case TEST_MODE: return "TEST_MODE";
-    case LAUNCH_PAD: return "LAUNCH_PAD";
-    case ASCENT: return "ASCENT";
-    case ROCKET_DEPLOY: return "ROCKET_DEPLOY";
-    case DESCENT: return "DESCENT";
-    case AEROBRAKE_RELEASE: return "AEROBRAKE_RELEASE";
-    case IMPACT: return "IMPACT";
-    default: return "UNKNOWN";
+  case BOOT:
+    return "BOOT";
+  case TEST_MODE:
+    return "TEST_MODE";
+  case LAUNCH_PAD:
+    return "LAUNCH_PAD";
+  case ASCENT:
+    return "ASCENT";
+  case ROCKET_DEPLOY:
+    return "ROCKET_DEPLOY";
+  case DESCENT:
+    return "DESCENT";
+  case AEROBRAKE_RELEASE:
+    return "AEROBRAKE_RELEASE";
+  case IMPACT:
+    return "IMPACT";
+  default:
+    return "UNKNOWN";
   }
 }
 
 FlightState stringToFlightState(String stateStr)
 {
   stateStr.trim();
-  
+
   // Try numeric format first (backward compatibility with old CSV format)
   int stateNum = stateStr.toInt();
   if (stateNum >= 0 && stateNum <= 7)
   {
     return (FlightState)stateNum;
   }
-  
+
   // Try string format
-  if (stateStr == "BOOT" || stateStr == "0") return BOOT;
-  if (stateStr == "TEST_MODE" || stateStr == "1") return TEST_MODE;
-  if (stateStr == "LAUNCH_PAD" || stateStr == "2") return LAUNCH_PAD;
-  if (stateStr == "ASCENT" || stateStr == "3") return ASCENT;
-  if (stateStr == "ROCKET_DEPLOY" || stateStr == "4") return ROCKET_DEPLOY;
-  if (stateStr == "DESCENT" || stateStr == "5") return DESCENT;
-  if (stateStr == "AEROBRAKE_RELEASE" || stateStr == "6") return AEROBRAKE_RELEASE;
-  if (stateStr == "IMPACT" || stateStr == "7") return IMPACT;
-  
+  if (stateStr == "BOOT" || stateStr == "0")
+    return BOOT;
+  if (stateStr == "TEST_MODE" || stateStr == "1")
+    return TEST_MODE;
+  if (stateStr == "LAUNCH_PAD" || stateStr == "2")
+    return LAUNCH_PAD;
+  if (stateStr == "ASCENT" || stateStr == "3")
+    return ASCENT;
+  if (stateStr == "ROCKET_DEPLOY" || stateStr == "4")
+    return ROCKET_DEPLOY;
+  if (stateStr == "DESCENT" || stateStr == "5")
+    return DESCENT;
+  if (stateStr == "AEROBRAKE_RELEASE" || stateStr == "6")
+    return AEROBRAKE_RELEASE;
+  if (stateStr == "IMPACT" || stateStr == "7")
+    return IMPACT;
+
   return BOOT; // Default to BOOT if unknown
 }
 
@@ -589,7 +611,7 @@ FlightState readLastFlightStateFromCSV()
   }
 
   String lastLine = "";
-  
+
   // OPTIMIZED: Read from end of file backwards to find last valid line
   size_t fileSize = file.size();
   if (fileSize == 0)
@@ -597,18 +619,18 @@ FlightState readLastFlightStateFromCSV()
     file.close();
     return BOOT;
   }
-  
+
   // Start reading from end, going backwards in chunks
   const int CHUNK_SIZE = 512;
   char buffer[CHUNK_SIZE + 1];
   int bytesToRead = min(CHUNK_SIZE, (int)fileSize);
-  
+
   file.seek(fileSize - bytesToRead);
   int bytesRead = file.readBytes(buffer, bytesToRead);
   buffer[bytesRead] = '\0';
-  
+
   String fileEnd = String(buffer);
-  
+
   // Find last complete line (ignore incomplete last line if any)
   int lastNewline = fileEnd.lastIndexOf('\n');
   if (lastNewline > 0)
@@ -624,7 +646,7 @@ FlightState readLastFlightStateFromCSV()
       lastLine = fileEnd.substring(0, lastNewline);
     }
   }
-  
+
   file.close();
   lastLine.trim();
 
@@ -637,7 +659,7 @@ FlightState readLastFlightStateFromCSV()
   int commaCount = 0;
   int startIndex = 0;
   int endIndex = 0;
-  
+
   for (int i = 0; i < lastLine.length(); i++)
   {
     if (lastLine.charAt(i) == ',')
@@ -659,10 +681,10 @@ FlightState readLastFlightStateFromCSV()
   {
     String stateStr = lastLine.substring(startIndex, endIndex);
     FlightState recoveredState = stringToFlightState(stateStr);
-    
+
     Serial.print("[RECOVER] Last state: ");
     Serial.println(flightStateToString(recoveredState));
-    
+
     return recoveredState;
   }
 
@@ -721,9 +743,9 @@ void readGPS()
   // GPS LOCK DETECTION WITH STABILITY (HYSTERESIS)
   // Basic GPS lock check
   bool currentGpsLock = (gps.location.isValid() && gps.location.age() < 5000 && primaryData.gnssSats >= 4);
-  
+
   unsigned long currentTime = millis();
-  
+
   if (currentGpsLock && !gpsLocked)
   {
     // GPS just achieved lock - start confirmation timer
@@ -989,8 +1011,8 @@ String createCSVRow()
 {
   String csvRow = "";
 
-  // Use BMP390 data from secondary if available, otherwise fallback to BMP280
-  float useAltitude = secondaryData.dataValid ? secondaryData.bmp390Altitude : primaryData.altitude;
+  // USE TEST ALTITUDE from array (currentAltitude is set in updateFlightState)
+  float useAltitude = currentAltitude;
   float usePressure = secondaryData.dataValid ? secondaryData.bmp390Pressure : primaryData.pressure;
   float useTemperature = secondaryData.dataValid ? secondaryData.bmp390Temperature : primaryData.temperature;
 
@@ -1034,17 +1056,17 @@ bool writeToSD(String csvRow)
   // MINIMIZE GPS INTERFERENCE during SD writes:
   // 1. Set SPI to lowest possible speed before writing
   SPI.setFrequency(200000); // 200kHz for minimal interference
-  
+
   File file = SD.open("/telemetry.csv", FILE_APPEND);
   if (file)
   {
     file.println(csvRow);
     file.flush(); // Force immediate write to reduce time with active SPI
     file.close();
-    
+
     // 2. Small delay after SD write to let GPS recover
     delay(10);
-    
+
     return true;
   }
   return false;
@@ -1054,38 +1076,16 @@ bool writeToSD(String csvRow)
 
 void updateFlightState()
 {
-  // Handle BMP390 failure detection and failover to BMP280
-  if (usingBMP390 && secondaryData.dataValid)
+  // USE TEST ALTITUDE ARRAY - Cycle through one value per call
+  if (testAltitudeIndex < testAltitudesCount)
   {
-    // Check if BMP390 has failed
-    if (secondaryData.bmp390Error != 0)
-    {
-      Serial.println("[FAILOVER] BMP390 failed - switching to BMP280");
-      usingBMP390 = false;
-      
-      // Calibrate BMP280 to match last known altitude from BMP390
-      if (bmp280Calibrated)
-      {
-        calibrateBMP280ToLastAltitude();
-      }
-    }
-    else
-    {
-      // BMP390 is working - update last known altitude
-      lastKnownAltitude = secondaryData.bmp390Altitude;
-    }
-  }
-  
-  // Update current altitude based on active sensor
-  if (usingBMP390 && secondaryData.dataValid && secondaryData.bmp390Error == 0)
-  {
-    // Use BMP390 from Secondary (primary altitude sensor)
-    currentAltitude = secondaryData.bmp390Altitude;
+    currentAltitude = testAltitudes[testAltitudeIndex];
+    testAltitudeIndex++;
   }
   else
   {
-    // Use BMP280 from Primary (fallback altitude sensor)
-    currentAltitude = primaryData.altitude;
+    // Array ended - keep last altitude (0m) and stay in current state
+    currentAltitude = testAltitudes[testAltitudesCount - 1];
   }
 
   switch (currentState)
@@ -1093,18 +1093,15 @@ void updateFlightState()
   case BOOT:
     if (bootComplete)
     { // Boot complete when sensors are initialized
-      currentState = TEST_MODE;
-      Serial.println("[STATE] BOOT -> TEST_MODE");
+      currentState = LAUNCH_PAD;
+      Serial.println("[STATE] BOOT -> LAUNCH_PAD");
     }
     break;
 
   case TEST_MODE:
-    // Transition to LAUNCH_PAD when sensors are stable (GPS lock not required)
-    // After power recovery, allow staying in TEST_MODE or moving forward
-    if (sensorsOK && currentAltitude < 100)
-    {
-      currentState = LAUNCH_PAD;
-    }
+    // Transition to LAUNCH_PAD immediately (TEST_MODE bypassed for testing)
+    currentState = LAUNCH_PAD;
+    Serial.println("[STATE] TEST_MODE -> LAUNCH_PAD");
     break;
 
   case LAUNCH_PAD:
@@ -1127,7 +1124,7 @@ void updateFlightState()
     }
 
     // Detect apogee (altitude decrease after significant ascent)
-    if (currentAltitude < (maxAltitude - 100) && maxAltitude > 100)
+    if (currentAltitude < (maxAltitude - 200) && maxAltitude > 100)
     {
       currentState = ROCKET_DEPLOY;
       apogeeReached = true;
@@ -1185,9 +1182,9 @@ void checkSensorInitialization()
   // Check if sensors are initialized (exclude GPS and SD card as per requirements)
   bool mpu6050OK = !isnan(primaryData.accelX) && !isnan(primaryData.gyroX);
   bool bmp280OK = !isnan(primaryData.temperature) && !isnan(primaryData.pressure);
-  
+
   sensorsInitialized = mpu6050OK && bmp280OK;
-  
+
   if (sensorsInitialized && !bootComplete)
   {
     bootComplete = true;
@@ -1199,7 +1196,7 @@ void checkSensorInitialization()
 void handleLEDs()
 {
   unsigned long currentTime = millis();
-  
+
   // 1. RED LED: ON during boot, BLINKING if SD card error after boot
   if (!bootComplete)
   {
@@ -1221,7 +1218,7 @@ void handleLEDs()
     // Turn off RED LED if SD card is OK
     digitalWrite(LED_RED_PIN, LOW);
   }
-  
+
   // 2. YELLOW LED: BLINKING when GPS not stable (after boot)
   if (bootComplete && !gpsStable)
   {
@@ -1236,7 +1233,7 @@ void handleLEDs()
   {
     digitalWrite(LED_YELLOW_PIN, LOW);
   }
-  
+
   // 3. GREEN LED: Quick blink when everything is OK (GPS stable + SD card OK)
   // Pattern: 25ms ON, 75ms OFF, repeating every 1 second (matches Secondary D2)
   if (bootComplete && gpsStable && sdCardOK)
@@ -1283,7 +1280,7 @@ void handleBuzzer()
   unsigned long currentTime = millis();
   static unsigned long buzzerSequenceStart = 0;
   static int beepPhase = 0;
-  
+
   // 1. Boot complete beep (single beep when sensors initialized)
   if (bootComplete && !bootBeepDone)
   {
@@ -1300,7 +1297,7 @@ void handleBuzzer()
     }
     return;
   }
-  
+
   // 2. SD Card error beeps (double beep pattern)
   if (bootComplete && !sdCardOK && !sdErrorBeepActive)
   {
@@ -1312,11 +1309,11 @@ void handleBuzzer()
       sdErrorBeepActive = true;
     }
   }
-  
+
   if (sdErrorBeepActive)
   {
     unsigned long elapsed = currentTime - buzzerSequenceStart;
-    
+
     if (sdErrorBeepCount < 2) // Two beeps for SD error
     {
       if (beepPhase == 0 && elapsed < BUZZER_BEEP_SHORT)
@@ -1341,7 +1338,7 @@ void handleBuzzer()
       beepPhase = 0;
       buzzerSequenceStart = currentTime;
     }
-    
+
     if (sdCardOK)
     {
       sdErrorBeepActive = false;
@@ -1350,7 +1347,7 @@ void handleBuzzer()
     }
     return;
   }
-  
+
   // 3. All OK beeps (triple beep when everything is OK)
   if (bootComplete && gpsStable && sdCardOK)
   {
@@ -1362,9 +1359,9 @@ void handleBuzzer()
         allOkBeepCount = 0;
         beepPhase = 0;
       }
-      
+
       unsigned long elapsed = currentTime - buzzerSequenceStart;
-      
+
       if (allOkBeepCount < 3) // Three beeps for all OK
       {
         if (beepPhase == 0 && elapsed < BUZZER_BEEP_SHORT)
@@ -1413,7 +1410,7 @@ void handleBuzzer()
       lastStableLossTime = 0; // Reset timer when GPS is stable
     }
   }
-  
+
   // 4. Recovery beeps (continuous long beeps after landing)
   if (currentState == IMPACT && !recoveryBeepActive)
   {
@@ -1421,11 +1418,11 @@ void handleBuzzer()
     recoveryBeepTimer = currentTime;
     Serial.println("[RECOVERY] Beeper activated");
   }
-  
+
   if (recoveryBeepActive)
   {
     unsigned long elapsed = currentTime - recoveryBeepTimer;
-    
+
     if (elapsed < BUZZER_BEEP_LONG)
     {
       digitalWrite(BUZZER_PIN, HIGH);
@@ -1440,7 +1437,7 @@ void handleBuzzer()
     }
     return;
   }
-  
+
   // Default: buzzer off
   if (!sdErrorBeepActive && !recoveryBeepActive && bootBeepDone && allOkBeepDone)
   {
@@ -1565,31 +1562,32 @@ void setup()
 
   // GPS INTERFERENCE MITIGATION STRATEGY:
   // Initialize GPS-friendly subsystems first, SD card last
-  
+
   initializePins();
   delay(500); // Let power stabilize
-  
+
   // 1. Initialize UART (including GPS) first - highest priority
   initializeUART();
   Serial.println("\n[PRIMARY] CanSat Mission Control");
   Serial.println("========================================");
-  
+
   // 2. Give GPS time to start receiving data before other subsystems
   unsigned long gpsStartTime = millis();
-  while (millis() - gpsStartTime < 3000) {
+  while (millis() - gpsStartTime < 3000)
+  {
     readGPS(); // Start collecting GPS data immediately
     delay(100);
   }
-  
+
   // 3. Initialize I2C sensors (lower interference)
   bool i2cOK = initializeI2C();
-  
+
   // 3.5. Initialize servo (low interference)
   initializeServo();
-  
+
   // 4. Initialize SD card LAST (highest interference potential)
   sdCardOK = initializeSD();
-  
+
   // 5. Give GPS time to re-acquire after SD interference
   delay(2000);
 
@@ -1597,13 +1595,13 @@ void setup()
   Serial.println("[INIT] Waiting for BMP390...");
   unsigned long bmp390WaitStart = millis();
   const unsigned long BMP390_WAIT_TIMEOUT = 10000; // 10 second timeout
-  
+
   while (!bmp390Ready && (millis() - bmp390WaitStart < BMP390_WAIT_TIMEOUT))
   {
     // Request data from Secondary to check BMP390 status
     requestSecondaryData();
     delay(500);
-    
+
     // Check if BMP390 is operational (no error and valid data)
     if (secondaryData.bmp390Error == 0 && secondaryData.bmp390Altitude != 0.0)
     {
@@ -1616,7 +1614,7 @@ void setup()
       break;
     }
   }
-  
+
   if (!bmp390Ready)
   {
     Serial.println("[WARN] BMP390 timeout - using BMP280");
@@ -1666,7 +1664,7 @@ void setup()
   if (sdCardOK)
   {
     FlightState recoveredState = readLastFlightStateFromCSV();
-    
+
     // Only recover state if it's beyond BOOT (indicates we were in active flight)
     if (recoveredState != BOOT)
     {
@@ -1675,17 +1673,17 @@ void setup()
       Serial.print("[RECOVER] Resuming from: ");
       Serial.println(flightStateToString(recoveredState));
       Serial.println("========================================");
-      
+
       currentState = recoveredState;
-      bootComplete = true; // Skip boot state
+      bootComplete = true;       // Skip boot state
       sensorsInitialized = true; // Sensors already initialized
-      
+
       // Special handling for IMPACT state (already landed)
       if (currentState == IMPACT)
       {
         recoveryBeepActive = true;
       }
-      
+
       // Log the recovery event to CSV
       String recoveryLog = TEAM_ID + ",";
       recoveryLog += String(millis()) + ",";
@@ -1754,7 +1752,7 @@ void loop()
 
   // Check sensor initialization status
   checkSensorInitialization();
-  
+
   // Update LEDs and buzzer with new logic
   handleLEDs();
   handleBuzzer();
@@ -1770,14 +1768,14 @@ void loop()
     Serial.print(" | Alt: ");
     Serial.print(currentAltitude, 1);
     Serial.println(" m");
-    
+
     Serial.print("[SENSOR] ");
     Serial.print(usingBMP390 ? "BMP390" : "BMP280");
     Serial.print(" | MPU: ");
     Serial.print(!isnan(primaryData.accelX) ? "OK" : "FAIL");
     Serial.print(" | Init: ");
     Serial.println(sensorsInitialized ? "YES" : "NO");
-    
+
     Serial.print("[GPS] Lock: ");
     Serial.print(gpsLocked ? "YES" : "NO");
     Serial.print(" | Stable: ");
@@ -1788,21 +1786,21 @@ void loop()
     Serial.print(primaryData.gnssLat, 6);
     Serial.print(" | Lon: ");
     Serial.println(primaryData.gnssLong, 6);
-    
+
     Serial.print("[SYSTEM] Boot: ");
     Serial.print(bootComplete ? "YES" : "NO");
     Serial.print(" | SD: ");
     Serial.print(sdCardOK ? "OK" : "FAIL");
     Serial.print(" | Err: ");
     Serial.println(generateErrorCode());
-    
+
     Serial.print("[LED] R:");
     Serial.print(!bootComplete || !sdCardOK ? "ON" : "OFF");
     Serial.print(" Y:");
     Serial.print(bootComplete && !gpsStable ? "BLINK" : "OFF");
     Serial.print(" G:");
     Serial.println(bootComplete && gpsStable && sdCardOK ? "BLINK" : "OFF");
-    
+
     Serial.println("==================================\n");
     lastDebugOutput = currentTime;
   }
