@@ -1369,7 +1369,7 @@ void updateFlightState()
   case AEROBRAKE_RELEASE:
     // Detect impact (low altitude + low vertical velocity)
     // After power recovery in AEROBRAKE_RELEASE, continue monitoring for impact
-    if (currentAltitude < 10) // && abs(primaryData.accelZ) > 2.0)  // Commented out acceleration check for test data
+    if (currentAltitude < 50) // && abs(primaryData.accelZ) > 2.0)  // Commented out acceleration check for test data
     {
       currentState = IMPACT;
       Serial.println("[STATE] AEROBRAKE_RELEASE -> IMPACT");
