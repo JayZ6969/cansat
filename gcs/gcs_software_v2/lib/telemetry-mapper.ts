@@ -56,7 +56,37 @@ export function mapPythonToTelemetry(pythonData: any): TelemetryData {
     // Flight State
     flightState: pythonData.flight_state,
     mode: pythonData.mode || pythonData.flight_mode,
+    
+    // Error Codes
+    errorCodes: parseErrorCodes(pythonData.error_code),
   }
+}
+
+/**
+ * Parse error codes from the CanSat
+ * Error codes can be:
+ * - 0: No error (All Good)
+ * - 8: GPS not locked (during flight)
+ * - 58: GPS not locked (during pre-flight/ground)
+ * - Other codes as defined by the CanSat firmware
+ */
+function parseErrorCodes(errorCode: number | undefined): Array<string | { code: string; message?: string }> {
+  if (errorCode === undefined || errorCode === null || errorCode === 0) {
+    return []
+  }
+  
+  const errorMap: Record<number, string> = {
+    8: "GPS Not Locked (Flight)",
+    58: "GPS Not Locked (Ground)",
+    // Add more error codes as needed
+  }
+  
+  const message = errorMap[errorCode] || `Unknown Error Code: ${errorCode}`
+  
+  return [{
+    code: errorCode.toString(),
+    message: message
+  }]
 }
 
 function mapFlightStateToStatus(flightState: number | undefined): "idle" | "armed" | "ascending" | "descending" | "landed" {

@@ -164,9 +164,9 @@ export function DashboardHeader({ isConnected, signalStrength, batteryPercentage
 
           <div className="h-6 w-px bg-border" />
 
-          {/* Max Altitude */}
+          {/* Altitude */}
           <div className="text-sm">
-            <span className="text-muted-foreground">Max Altitude: </span>
+            <span className="text-muted-foreground">Altitude: </span>
             <span className="font-mono font-semibold text-foreground">{maxAltitude.toFixed(0)} m</span>
           </div>
 

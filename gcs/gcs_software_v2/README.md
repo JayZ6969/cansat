@@ -318,6 +318,29 @@ pip install -r backend/requirements.txt
 npm install --legacy-peer-deps
 ```
 
+#### 3. Download Satellite Imagery (First-Time Setup)
+
+**Important**: After cloning the repository, download cached satellite tiles for offline map operation:
+
+```bash
+# Windows
+setup_satellite_tiles.bat
+
+# macOS/Linux
+chmod +x setup_satellite_tiles.sh
+./setup_satellite_tiles.sh
+
+# Or manually
+python scripts/download_satellite_tiles.py
+```
+
+This downloads satellite imagery for the mission area (26.720333°N, 84.303806°E, 3km radius).
+- **First download**: ~5-15 minutes
+- **Storage**: ~100-300 MB
+- **Result**: Offline satellite maps
+
+See [SATELLITE_IMAGERY_SETUP.md](SATELLITE_IMAGERY_SETUP.md) for detailed information.
+
 ## Running the Application
 
 ### Quick Start

@@ -19,7 +19,17 @@ from src.data_manager import DataManager
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(
+    app, 
+    cors_allowed_origins="*", 
+    async_mode='threading',
+    logger=False,
+    engineio_logger=False,
+    ping_timeout=60,
+    ping_interval=25,
+    transports=['polling', 'websocket'],
+    allow_upgrades=True
+)
 
 # Global instances
 telemetry_handler = TelemetryHandler()
@@ -150,6 +160,18 @@ def handle_stop_mission():
     is_mission_active = False
     emit('mission_status', {'status': 'stopped', 'active': False})
     print("Mission stopped")
+
+@socketio.on_error_default
+def default_error_handler(e):
+    """Handle SocketIO errors"""
+    print(f"[SOCKETIO ERROR] {str(e)}")
+    return False
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Handle Flask errors"""
+    print(f"[FLASK ERROR] {str(e)}")
+    return jsonify(error=str(e)), 500
 
 @socketio.on('export_data')
 def handle_export_data(data):

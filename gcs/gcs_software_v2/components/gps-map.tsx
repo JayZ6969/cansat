@@ -87,18 +87,63 @@ export function GPSMap({ telemetry }: GPSMapProps) {
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current || !leafletLoaded || !LRef.current) return
 
-    // Create map centered on default location
+    // Create map centered on mission area (Coordinates: 26.720333, 84.303806)
     const map = LRef.current.map(mapRef.current, {
-      center: [12.9716, 77.5946], // Default: Bangalore, India
-      zoom: 13,
+      center: [26.720333, 84.303806], // Mission area coordinates
+      zoom: 15,
       zoomControl: true,
+      minZoom: 13,
+      maxZoom: 17,
     })
 
-    // Add OpenStreetMap tile layer
-    LRef.current.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
-      maxZoom: 19,
-    }).addTo(map)
+    // Try to use local satellite tiles first, fallback to online if not available
+    const satelliteLayer = LRef.current.tileLayer('/map_tiles/satellite/{z}/{x}/{y}.png', {
+      attribution: '© ESRI World Imagery',
+      maxZoom: 17,
+      errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', // 1x1 transparent fallback
+    })
+
+    // Fallback to online satellite imagery if local tiles fail
+    const onlineSatelliteLayer = LRef.current.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {
+        attribution: '© ESRI World Imagery',
+        maxZoom: 19,
+      }
+    )
+
+    // Add labels overlay for better readability
+    const labelsLayer = LRef.current.tileLayer(
+      'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',
+      {
+        attribution: '© OpenStreetMap contributors, © CARTO',
+        maxZoom: 19,
+        pane: 'shadowPane', // Render above base layer
+      }
+    )
+
+    // Try local tiles first
+    satelliteLayer.addTo(map)
+    labelsLayer.addTo(map)
+
+    // If local tiles fail to load after 2 seconds, switch to online
+    let localTilesFailed = false
+    setTimeout(() => {
+      if (!localTilesFailed) {
+        console.log('[MAP] Using local cached satellite tiles')
+      }
+    }, 2000)
+
+    satelliteLayer.on('tileerror', () => {
+      if (!localTilesFailed) {
+        localTilesFailed = true
+        console.log('[MAP] Local tiles not available, switching to online satellite imagery')
+        satelliteLayer.remove()
+        onlineSatelliteLayer.addTo(map)
+        // Re-add labels on top
+        labelsLayer.bringToFront()
+      }
+    })
 
     mapInstanceRef.current = map
 

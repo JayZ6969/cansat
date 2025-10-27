@@ -154,6 +154,15 @@ exports/
 *.xlsx
 *.json.bak
 
+# Cached satellite imagery tiles (download using scripts/download_satellite_tiles.py)
+public/map_tiles/satellite/
+public/map_tiles/hybrid/
+public/map_tiles/*.png
+public/map_tiles/**/*.png
+
+# Keep tile_info.json for reference
+!public/map_tiles/tile_info.json
+
 # Old web folder (cleanup)
 web/
 

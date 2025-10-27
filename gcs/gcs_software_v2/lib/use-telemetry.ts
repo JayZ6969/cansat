@@ -5,6 +5,7 @@ import type { TelemetryData, ConnectionState } from "./telemetry-types"
 import { WebSocketClient } from "./websocket-client"
 import { generateMockTelemetry } from "./mock-data"
 import NotificationService from "./notification-service"
+import { sendLandingNotification, initializeEmailJS } from "./email-service"
 
 interface UseTelemetryOptions {
   useMockData?: boolean
@@ -29,6 +30,63 @@ export function useTelemetry(options: UseTelemetryOptions = {}) {
   const lastLoRaDataRef = useRef<number>(0)
   const loraTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const lastLoRaStatusRef = useRef<boolean>(false)
+  
+  // Email notification state
+  const emailSentRef = useRef<boolean>(false)
+  const landingDetectedRef = useRef<boolean>(false)
+
+  // Check for landing and send email notification
+  const checkLandingAndSendEmail = useCallback((data: TelemetryData) => {
+    // Check if landing detected (flight_state === 7)
+    const isLanded = data.flightState === 7
+    
+    if (isLanded && !landingDetectedRef.current) {
+      console.log('[EmailJS] 🎯 Landing detected! Flight state:', data.flightState)
+      landingDetectedRef.current = true
+      
+      // Send email notification if not already sent
+      if (!emailSentRef.current) {
+        console.log('[EmailJS] Sending landing notification email...')
+        
+        // Convert data to email-compatible format
+        const emailData = {
+          timestamp: data.missionTime?.toString() || '',
+          flight_state: data.flightState,
+          altitude: data.altitude,
+          pressure: data.pressure,
+          temperature: data.temperature,
+          voltage: data.batteryVoltage,
+          battery_percentage: data.batteryPercentage,
+          gnss_lat: data.latitude,
+          gnss_long: data.longitude,
+          gnss_alt: data.gpsAltitude,
+          gnss_sats: data.gpsSatellites,
+          gnss_speed: data.gpsSpeed,
+          mode: data.mode,
+          rssi: data.rssi,
+          snr: data.snr,
+        }
+        
+        sendLandingNotification(emailData)
+          .then((success) => {
+            if (success) {
+              emailSentRef.current = true
+              console.log('[EmailJS] ✅ Landing notification sent successfully')
+            } else {
+              console.warn('[EmailJS] ⚠️ Failed to send landing notification')
+            }
+          })
+          .catch((error) => {
+            console.error('[EmailJS] ❌ Error sending landing notification:', error)
+          })
+      }
+    }
+  }, [])
+
+  // Initialize EmailJS on mount
+  useEffect(() => {
+    initializeEmailJS()
+  }, [])
 
   // Initialize WebSocket if URL provided
   useEffect(() => {
@@ -59,6 +117,9 @@ export function useTelemetry(options: UseTelemetryOptions = {}) {
       wsClientRef.current.on("data", (event) => {
         if (event.data && typeof event.data !== 'string') {
           setTelemetry(event.data)
+          
+          // Check for landing and send email notification
+          checkLandingAndSendEmail(event.data)
           
           // Update last LoRa data timestamp for any data received (CSV or non-CSV)
           lastLoRaDataRef.current = Date.now()

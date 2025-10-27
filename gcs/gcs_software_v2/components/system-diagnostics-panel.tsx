@@ -16,24 +16,47 @@ const ERROR_CODE_MAP: { [key: string]: string } = {
   '5': 'GNSS/GPS',
   '6': 'PID Control',
   '7': 'Camera',
-  '8': 'Serial (UART)',
+  '8': 'GPS Not Locked (Flight)',
   '9': 'LoRa',
   '10': 'BMP390 (Pressure)',
+  '58': 'GPS Not Locked (Ground)',
 }
 
 export function SystemDiagnosticsPanel({ telemetry }: SystemDiagnosticsPanelProps) {
-  // Parse error codes from telemetry
+  // Parse error codes from telemetry - check multiple possible field names
   const errorCodeString = telemetry?.errorCode || telemetry?.ERROR_CODE || '0'
-  const hasErrors = errorCodeString !== '0' && errorCodeString !== ''
   
-  // Parse individual error codes
+  // Also check for the errorCodes array field from the new parser
+  const errorCodesArray = telemetry?.errorCodes || []
+  
+  // Convert errorCodes array to displayable format
+  const getErrorCodesFromArray = (): Array<{ code: string; message: string }> => {
+    if (!errorCodesArray || errorCodesArray.length === 0) return []
+    
+    return errorCodesArray.map((item: any) => {
+      if (typeof item === 'string') {
+        return { code: item, message: ERROR_CODE_MAP[item] || 'Unknown error' }
+      } else if (typeof item === 'object' && item.code) {
+        return { code: item.code, message: item.message || ERROR_CODE_MAP[item.code] || 'Unknown error' }
+      }
+      return { code: '0', message: 'Invalid error format' }
+    }).filter((err: { code: string; message: string }) => err.code !== '0')
+  }
+  
+  const hasErrors = errorCodeString !== '0' && errorCodeString !== '' || errorCodesArray.length > 0
+  
+  // Parse individual error codes from string format
   const parseErrorCodes = (errorStr: string): string[] => {
     if (!errorStr || errorStr === '0') return []
     
     const codes: string[] = []
     let remaining = errorStr
     
-    // Check for two-digit codes first (10)
+    // Check for two-digit codes first (10, 58)
+    if (remaining.includes('58')) {
+      codes.push('58')
+      remaining = remaining.replace('58', '')
+    }
     if (remaining.includes('10')) {
       codes.push('10')
       remaining = remaining.replace('10', '')
@@ -49,17 +72,26 @@ export function SystemDiagnosticsPanel({ telemetry }: SystemDiagnosticsPanelProp
     return codes
   }
   
-  const errorCodes = parseErrorCodes(errorCodeString)
+  // Get error codes from string format
+  const errorCodesFromString = parseErrorCodes(errorCodeString)
+  
+  // Get error codes from array format (new parser)
+  const errorCodesFromArray = getErrorCodesFromArray()
+  
+  // Combine both sources (prioritize array format if available)
+  const errorCodes = errorCodesFromArray.length > 0 
+    ? errorCodesFromArray 
+    : errorCodesFromString.map(code => ({ code, message: ERROR_CODE_MAP[code] || 'Unknown error' }))
   
   // Check for sensor-specific errors
-  const hasSensorError = errorCodes.some(code => ['1', '2', '10'].includes(code))
+  const hasSensorError = errorCodes.some(err => ['1', '2', '10'].includes(err.code))
   
   // Build sensor status message
   const getSensorStatus = () => {
-    const sensorErrors = errorCodes.filter(code => ['1', '2', '10'].includes(code))
+    const sensorErrors = errorCodes.filter(err => ['1', '2', '10'].includes(err.code))
     if (sensorErrors.length === 0) return { status: 'ok', value: 'All nominal' }
     
-    const errorNames = sensorErrors.map(code => ERROR_CODE_MAP[code] || code).join(', ')
+    const errorNames = sensorErrors.map(err => err.message).join(', ')
     return { status: 'critical', value: errorNames }
   }
   
@@ -111,15 +143,15 @@ export function SystemDiagnosticsPanel({ telemetry }: SystemDiagnosticsPanelProp
           
           {hasErrors ? (
             <div className="space-y-1 max-h-32 overflow-y-auto">
-              {errorCodes.map((code: string, index: number) => (
+              {errorCodes.map((err: { code: string; message: string }, index: number) => (
                 <div key={index} className="flex items-start gap-2 text-xs p-2 rounded bg-destructive/10 border border-destructive/20">
                   <AlertTriangle className="h-3 w-3 text-destructive mt-0.5 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="font-mono font-semibold text-destructive">
-                      Error {code}
+                      Error {err.code}
                     </div>
                     <div className="text-[10px] text-muted-foreground">
-                      {ERROR_CODE_MAP[code] || 'Unknown error'}
+                      {err.message}
                     </div>
                   </div>
                 </div>
