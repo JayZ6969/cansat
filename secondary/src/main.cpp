@@ -690,8 +690,8 @@ void controlReactionWheel(float pidValue)
     // Safety limits
     currentESCMicroseconds = constrain(currentESCMicroseconds, 1000.0, 2000.0);
 
-    // Apply to ESC
-    reactionWheelESC.writeMicroseconds((int)currentESCMicroseconds);
+    // DISABLED: ESC output disabled - PID calculated and logged but not applied to motor
+    // reactionWheelESC.writeMicroseconds((int)currentESCMicroseconds);
 
     lastUpdateTime = currentTime;
 }
@@ -707,7 +707,8 @@ void stopReactionWheel()
     // Set ESC to neutral position
     currentESCMicroseconds = 1500.0;
     targetESCMicroseconds = 1500.0;
-    reactionWheelESC.writeMicroseconds(1500);
+    // DISABLED: ESC output disabled
+    // reactionWheelESC.writeMicroseconds(1500);
 
     // Clear all state variables
     reactionWheelActive = false;

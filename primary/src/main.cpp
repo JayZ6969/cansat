@@ -201,13 +201,9 @@ const unsigned long RECOVERY_BEEP_INTERVAL = 2000; // 2s between recovery beeps
 float maxAltitude = 0.0;
 bool apogeeReached = false;
 float currentAltitude = 0.0;
+float lastStoredAltitude = 0.0; // For power failure recovery - stores last valid altitude
 unsigned long ascentStartTime = 0;
 bool servoOpen = false; // Track servo position
-
-// TEST ALTITUDE ARRAY
-const float testAltitudes[] = {0, 2, 8, 15, 28, 45, 67, 89, 115, 148, 182, 221, 265, 312, 358, 411, 468, 522, 581, 638, 695, 748, 802, 861, 918, 972, 1024, 1071, 1115, 1158, 1189, 1205, 1198, 1192, 1187, 1179, 1165, 1151, 1138, 1122, 1108, 1089, 1074, 1055, 1041, 1022, 1008, 985, 968, 952, 931, 915, 894, 878, 859, 843, 821, 805, 784, 768, 749, 733, 711, 695, 674, 658, 637, 621, 605, 602, 599, 595, 591, 588, 584, 581, 577, 574, 570, 567, 563, 560, 556, 553, 549, 546, 542, 539, 535, 532, 528, 525, 521, 518, 514, 511, 507, 504, 500, 497, 493, 490, 487, 483, 480, 476, 473, 469, 466, 463, 459, 456, 452, 449, 446, 442, 439, 435, 432, 429, 425, 422, 418, 415, 412, 408, 405, 402, 398, 395, 392, 388, 385, 382, 378, 375, 372, 368, 365, 362, 358, 355, 352, 348, 345, 342, 339, 335, 332, 329, 326, 322, 319, 316, 313, 309, 306, 303, 300, 296, 293, 290, 287, 284, 281, 277, 274, 271, 268, 265, 262, 259, 255, 252, 249, 246, 243, 240, 237, 234, 231, 227, 224, 221, 218, 215, 212, 209, 206, 203, 200, 197, 194, 191, 188, 185, 181, 178, 175, 172, 169, 166, 163, 160, 157, 154, 151, 148, 145, 142, 139, 136, 133, 130, 127, 124, 121, 118, 115, 112, 109, 106, 103, 100, 97, 94, 91, 88, 85, 83, 80, 77, 74, 71, 68, 65, 62, 59, 56, 54, 51, 48, 45, 42, 39, 37, 34, 31, 28, 25, 23, 20, 17, 14, 12, 9, 6, 4, 1, 0};
-const int testAltitudesCount = sizeof(testAltitudes) / sizeof(testAltitudes[0]);
-int testAltitudeIndex = 0;
 
 // BMP280 baseline calibration
 float baselineAltitudeBMP280 = 0.0;
@@ -773,15 +769,10 @@ void readFlightVariablesFromCSV()
       case 3: // ALTITUDE
       {
         float lastAlt = field.toFloat();
-        // Find position in test altitude array
-        for (int j = 0; j < testAltitudesCount; j++)
+        lastStoredAltitude = lastAlt; // Store for power failure recovery
+        if (lastAlt > maxAltitude)
         {
-          if (abs(testAltitudes[j] - lastAlt) < 5.0) // Within 5m tolerance
-          {
-            testAltitudeIndex = j + 1; // Resume from next index
-            maxAltitude = lastAlt;     // Set max altitude to at least this value
-            break;
-          }
+          maxAltitude = lastAlt; // Update max altitude if this is higher
         }
       }
       break;
@@ -842,8 +833,8 @@ void readFlightVariablesFromCSV()
 
   Serial.print("[RECOVER] Packet: ");
   Serial.print(packetCount);
-  Serial.print(" | Test Index: ");
-  Serial.print(testAltitudeIndex);
+  Serial.print(" | Last Alt: ");
+  Serial.print(lastStoredAltitude);
   Serial.print(" | Max Alt: ");
   Serial.print(maxAltitude);
   Serial.print(" | Servo: ");
@@ -1218,7 +1209,7 @@ String createCSVRow()
 {
   String csvRow = "";
 
-  // USE TEST ALTITUDE from array (currentAltitude is set in updateFlightState)
+  // USE REAL ALTITUDE from sensors (currentAltitude is set in updateFlightState)
   float useAltitude = currentAltitude;
   float usePressure = secondaryData.dataValid ? secondaryData.bmp390Pressure : primaryData.pressure;
   float useTemperature = secondaryData.dataValid ? secondaryData.bmp390Temperature : primaryData.temperature;
@@ -1283,16 +1274,26 @@ bool writeToSD(String csvRow)
 
 void updateFlightState()
 {
-  // USE TEST ALTITUDE ARRAY - Cycle through one value per call
-  if (testAltitudeIndex < testAltitudesCount)
+  // USE REAL SENSOR DATA - Prefer BMP390, fallback to BMP280
+  if (secondaryData.dataValid && !secondaryData.bmp390Error && secondaryData.bmp390Altitude != 0.0)
   {
-    currentAltitude = testAltitudes[testAltitudeIndex];
-    testAltitudeIndex++;
+    // BMP390 from Secondary is primary altitude sensor (more accurate)
+    currentAltitude = secondaryData.bmp390Altitude;
+    usingBMP390 = true;
+    lastStoredAltitude = currentAltitude; // Store for power failure recovery
+  }
+  else if (!isnan(primaryData.altitude) && bmp280Calibrated)
+  {
+    // Fallback to BMP280 from Primary
+    currentAltitude = primaryData.altitude;
+    usingBMP390 = false;
+    lastStoredAltitude = currentAltitude; // Store for power failure recovery
   }
   else
   {
-    // Array ended - keep last altitude (0m) and stay in current state
-    currentAltitude = testAltitudes[testAltitudesCount - 1];
+    // No valid sensor data - use last known altitude
+    currentAltitude = lastStoredAltitude;
+    Serial.println("[WARN] No valid altitude sensor - using last known value");
   }
 
   switch (currentState)
