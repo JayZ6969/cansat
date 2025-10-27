@@ -44,9 +44,8 @@
 #define ERROR_GNSS 5
 #define ERROR_PID 6
 #define ERROR_CAMERA 7
-#define ERROR_SERIAL 8
-#define ERROR_LORA 9
-#define ERROR_BMP390 10
+#define ERROR_LORA 8
+#define ERROR_BMP390 9
 
 // SPI SD Card
 #define SD_CS_PIN 5
@@ -135,9 +134,8 @@ struct SystemErrors
   bool gnssError = false;    // ID: 5
   bool pidError = false;     // ID: 6 (from Secondary)
   bool cameraError = false;  // ID: 7
-  bool serialError = false;  // ID: 8
-  bool loraError = false;    // ID: 9 (from Secondary)
-  bool bmp390Error = false;  // ID: 10 (from Secondary)
+  bool loraError = false;    // ID: 8 (from Secondary)
+  bool bmp390Error = false;  // ID: 9 (from Secondary)
 } systemErrors;
 
 // System status
@@ -217,13 +215,19 @@ bool bmp280Calibrated = false; // Track if BMP280 has been calibrated
 
 // PID Controller Variables (for logging/telemetry only, not for hardware control)
 float pidSetpoint = 0.0;       // Target spin rate (0 = stable, no rotation)
-float pidKp = 0.5;             // Proportional gain
-float pidKi = 0.1;             // Integral gain
-float pidKd = 0.2;             // Derivative gain
+float pidKp = 0.3;             // Proportional gain (reduced from 0.5 for smoother response)
+float pidKi = 0.05;            // Integral gain (reduced from 0.1)
+float pidKd = 0.15;            // Derivative gain (reduced from 0.2)
 float pidIntegral = 0.0;       // Integral accumulator
 float pidLastError = 0.0;      // Last error for derivative calculation
 float pidOutput = 0.0;         // PID output value (for logging only)
+float pidOutputSmoothed = 0.0; // Smoothed PID output with low-pass filter
 unsigned long pidLastTime = 0; // Last PID calculation time
+
+// PID Smoothing Parameters
+const float PID_SMOOTHING_FACTOR = 0.3; // Low-pass filter coefficient (0-1, lower = smoother)
+const float PID_DEADBAND = 5.0;         // Ignore corrections smaller than this value
+const float PID_MAX_CHANGE_RATE = 20.0; // Maximum change per update (limits acceleration)
 
 // ==================== INITIALIZATION FUNCTIONS ====================
 
@@ -234,6 +238,7 @@ void initializeUART();
 void calibrateBaselineBMP280();
 void calibrateBMP280ToLastAltitude();
 float readLastAltitudeFromCSV();
+void readFlightVariablesFromCSV();
 void initializeServo();
 
 // ==================== SENSOR READING FUNCTIONS ====================
@@ -272,7 +277,6 @@ void checkMPU6050Status();
 void checkBMP280Status();
 void checkSDCardStatus();
 void checkGNSSStatus();
-void checkSerialStatus();
 void checkCameraStatus();
 
 // ==================== INITIALIZATION FUNCTIONS ====================
@@ -691,6 +695,161 @@ FlightState readLastFlightStateFromCSV()
   return BOOT;
 }
 
+void readFlightVariablesFromCSV()
+{
+  if (!SD.exists("/telemetry.csv"))
+  {
+    return;
+  }
+
+  File file = SD.open("/telemetry.csv", FILE_READ);
+  if (!file)
+  {
+    return;
+  }
+
+  String lastLine = "";
+
+  // Read from end of file backwards to find last valid line
+  size_t fileSize = file.size();
+  if (fileSize == 0)
+  {
+    file.close();
+    return;
+  }
+
+  // Start reading from end, going backwards in chunks
+  const int CHUNK_SIZE = 512;
+  char buffer[CHUNK_SIZE + 1];
+  int bytesToRead = min(CHUNK_SIZE, (int)fileSize);
+
+  file.seek(fileSize - bytesToRead);
+  int bytesRead = file.readBytes(buffer, bytesToRead);
+  buffer[bytesRead] = '\0';
+
+  String fileEnd = String(buffer);
+
+  // Find last complete line
+  int lastNewline = fileEnd.lastIndexOf('\n');
+  if (lastNewline > 0)
+  {
+    int secondLastNewline = fileEnd.lastIndexOf('\n', lastNewline - 1);
+    if (secondLastNewline >= 0)
+    {
+      lastLine = fileEnd.substring(secondLastNewline + 1, lastNewline);
+    }
+    else
+    {
+      lastLine = fileEnd.substring(0, lastNewline);
+    }
+  }
+
+  file.close();
+  lastLine.trim();
+
+  if (lastLine.length() == 0)
+  {
+    return;
+  }
+
+  // Parse CSV fields
+  // Format: TEAM_ID,TIMESTAMP,PACKET_COUNT,ALTITUDE,PRESSURE,TEMP,VOLTAGE,GNSS_TIME,GNSS_LAT,GNSS_LONG,GNSS_ALT,GNSS_SATS,ACCEL_X,ACCEL_Y,ACCEL_Z,GYRO_X,GYRO_Y,GYRO_Z,GYRO_SPIN_RATE,FLIGHT_STATE,SERVO_STATUS,ERROR_CODE,GNSS_SPEED
+
+  int fieldIndex = 0;
+  int startIndex = 0;
+  String field = "";
+
+  for (int i = 0; i <= lastLine.length(); i++)
+  {
+    if (i == lastLine.length() || lastLine.charAt(i) == ',')
+    {
+      field = lastLine.substring(startIndex, i);
+
+      switch (fieldIndex)
+      {
+      case 2: // PACKET_COUNT
+        packetCount = field.toInt();
+        break;
+      case 3: // ALTITUDE
+      {
+        float lastAlt = field.toFloat();
+        // Find position in test altitude array
+        for (int j = 0; j < testAltitudesCount; j++)
+        {
+          if (abs(testAltitudes[j] - lastAlt) < 5.0) // Within 5m tolerance
+          {
+            testAltitudeIndex = j + 1; // Resume from next index
+            maxAltitude = lastAlt;     // Set max altitude to at least this value
+            break;
+          }
+        }
+      }
+      break;
+      case 20: // SERVO_STATUS
+        servoOpen = (field == "1");
+        break;
+      }
+
+      fieldIndex++;
+      startIndex = i + 1;
+    }
+  }
+
+  // Search backwards through file to find true max altitude
+  file = SD.open("/telemetry.csv", FILE_READ);
+  if (file)
+  {
+    // Read chunks and find maximum altitude value
+    float foundMaxAlt = 0.0;
+    while (file.available())
+    {
+      String line = file.readStringUntil('\n');
+      if (line.startsWith(TEAM_ID))
+      {
+        // Parse altitude (4th field)
+        int commaCount = 0;
+        int altStart = 0;
+        int altEnd = 0;
+        for (int i = 0; i < line.length(); i++)
+        {
+          if (line.charAt(i) == ',')
+          {
+            commaCount++;
+            if (commaCount == 3)
+              altStart = i + 1;
+            else if (commaCount == 4)
+            {
+              altEnd = i;
+              break;
+            }
+          }
+        }
+        if (altStart > 0 && altEnd > altStart)
+        {
+          float alt = line.substring(altStart, altEnd).toFloat();
+          if (alt > foundMaxAlt)
+            foundMaxAlt = alt;
+        }
+      }
+    }
+    file.close();
+
+    if (foundMaxAlt > maxAltitude)
+    {
+      maxAltitude = foundMaxAlt;
+    }
+  }
+
+  Serial.print("[RECOVER] Packet: ");
+  Serial.print(packetCount);
+  Serial.print(" | Test Index: ");
+  Serial.print(testAltitudeIndex);
+  Serial.print(" | Max Alt: ");
+  Serial.print(maxAltitude);
+  Serial.print(" | Servo: ");
+  Serial.println(servoOpen ? "OPEN" : "CLOSED");
+}
+
 void initializeServo()
 {
   lidServo.attach(SERVO_PIN);
@@ -733,8 +892,27 @@ void readGPS()
 
       if (gps.time.isValid())
       {
+        // Convert UTC to IST (UTC + 5:30)
+        int hours = gps.time.hour();
+        int minutes = gps.time.minute();
+        int seconds = gps.time.second();
+
+        // Add 5 hours and 30 minutes for IST
+        minutes += 30;
+        if (minutes >= 60)
+        {
+          minutes -= 60;
+          hours += 1;
+        }
+
+        hours += 5;
+        if (hours >= 24)
+        {
+          hours -= 24;
+        }
+
         char timeStr[20];
-        sprintf(timeStr, "%02d:%02d:%02d", gps.time.hour(), gps.time.minute(), gps.time.second());
+        sprintf(timeStr, "%02d:%02d:%02d", hours, minutes, seconds);
         primaryData.gnssTime = String(timeStr);
       }
     }
@@ -826,6 +1004,13 @@ bool readMPU6050()
   // Remove gravity component (9.81 m/s²)
   accelMagnitude = abs(accelMagnitude - 9.81);
 
+  // Apply deadband to ignore accelerometer noise when stationary
+  const float ACCEL_DEADBAND = 0.5; // Ignore accelerations below 0.5 m/s²
+  if (accelMagnitude < ACCEL_DEADBAND)
+  {
+    accelMagnitude = 0.0;
+  }
+
   // Calculate time delta in seconds
   if (lastReadTime > 0)
   {
@@ -834,9 +1019,16 @@ bool readMPU6050()
     // Integrate acceleration to get velocity: v = v0 + a*dt
     primaryData.speed += accelMagnitude * deltaTime;
 
-    // Apply damping factor to prevent drift (0.98 means 2% decay per reading)
+    // Apply strong damping factor to prevent drift (0.90 means 10% decay per reading)
     // This helps account for measurement errors and friction
-    primaryData.speed *= 0.98;
+    primaryData.speed *= 0.90;
+
+    // Reset to zero if speed is very low (below noise threshold)
+    const float MIN_SPEED_THRESHOLD = 0.2; // Reset if below 0.2 m/s
+    if (primaryData.speed < MIN_SPEED_THRESHOLD)
+    {
+      primaryData.speed = 0.0;
+    }
   }
 
   lastReadTime = currentTime;
@@ -857,8 +1049,9 @@ bool readBMP280()
 float calculatePID()
 {
   // PID controller for reaction wheel stabilization (LOGGING ONLY - NOT USED FOR CONTROL)
-  // Uses gyroSpinRate from MPU6050 to calculate control output
-  // Target: maintain zero spin rate (stable orientation)
+  // Uses gyroZ (yaw rate) from MPU6050 to calculate control output
+  // Target: maintain zero yaw spin rate (prevent spinning around vertical axis)
+  // NOTE: Only yaw stabilization needed - weight distribution naturally stabilizes pitch/roll
 
   unsigned long currentTime = millis();
 
@@ -868,6 +1061,7 @@ float calculatePID()
     pidLastTime = currentTime;
     pidLastError = 0.0;
     pidIntegral = 0.0;
+    pidOutputSmoothed = 0.0;
     return 0.0;
   }
 
@@ -877,12 +1071,18 @@ float calculatePID()
   // Avoid division by zero or too-frequent updates
   if (deltaTime < 0.01) // Less than 10ms
   {
-    return pidOutput; // Return last calculated value
+    return pidOutputSmoothed; // Return smoothed value
   }
 
   // Calculate error (setpoint - current value)
-  // Setpoint is 0 (we want no rotation for stable flight)
-  float error = pidSetpoint - primaryData.gyroSpinRate;
+  // Setpoint is 0 (we want no yaw rotation to prevent parachute wire tangling)
+  float error = pidSetpoint - primaryData.gyroZ;
+
+  // Apply deadband to prevent micro-corrections
+  if (abs(error) < PID_DEADBAND)
+  {
+    error = 0.0;
+  }
 
   // Proportional term
   float P = pidKp * error;
@@ -890,30 +1090,37 @@ float calculatePID()
   // Integral term (with anti-windup limiting)
   pidIntegral += error * deltaTime;
   // Limit integral to prevent windup
-  if (pidIntegral > 100.0)
-    pidIntegral = 100.0;
-  if (pidIntegral < -100.0)
-    pidIntegral = -100.0;
+  if (pidIntegral > 50.0)
+    pidIntegral = 50.0;
+  if (pidIntegral < -50.0)
+    pidIntegral = -50.0;
   float I = pidKi * pidIntegral;
 
-  // Derivative term
+  // Derivative term with smoothing
   float derivative = (error - pidLastError) / deltaTime;
   float D = pidKd * derivative;
 
-  // Calculate total PID output
-  pidOutput = P + I + D;
+  // Calculate raw PID output
+  float rawOutput = P + I + D;
 
-  // Limit output range (typical PWM range for motor control would be -255 to +255)
-  if (pidOutput > 255.0)
-    pidOutput = 255.0;
-  if (pidOutput < -255.0)
-    pidOutput = -255.0;
+  // Limit output range
+  rawOutput = constrain(rawOutput, -255.0, 255.0);
+
+  // Apply rate limiting (prevent sudden jumps)
+  float maxChange = PID_MAX_CHANGE_RATE * deltaTime * 100.0; // Scale by deltaTime
+  float outputChange = rawOutput - pidOutputSmoothed;
+  outputChange = constrain(outputChange, -maxChange, maxChange);
+
+  // Apply low-pass filter for smooth transitions
+  // New output = old output * (1 - alpha) + new value * alpha
+  pidOutput = pidOutputSmoothed + outputChange;
+  pidOutputSmoothed = pidOutputSmoothed * (1.0 - PID_SMOOTHING_FACTOR) + pidOutput * PID_SMOOTHING_FACTOR;
 
   // Update for next iteration
   pidLastError = error;
   pidLastTime = currentTime;
 
-  return pidOutput;
+  return pidOutputSmoothed;
 }
 
 // ==================== UART COMMUNICATION ====================
@@ -1161,7 +1368,7 @@ void updateFlightState()
   case AEROBRAKE_RELEASE:
     // Detect impact (low altitude + low vertical velocity)
     // After power recovery in AEROBRAKE_RELEASE, continue monitoring for impact
-    if (currentAltitude < 10 && abs(primaryData.accelZ) > 2.0)
+    if (currentAltitude < 10) // && abs(primaryData.accelZ) > 2.0)  // Commented out acceleration check for test data
     {
       currentState = IMPACT;
       Serial.println("[STATE] AEROBRAKE_RELEASE -> IMPACT");
@@ -1470,7 +1677,6 @@ void checkAllSubsystemErrors()
   checkBMP280Status();
   checkSDCardStatus();
   checkGNSSStatus();
-  checkSerialStatus();
   checkCameraStatus();
 
   // Update Secondary subsystem errors from received data
@@ -1495,12 +1701,10 @@ String generateErrorCode()
     errorCode += "6";
   if (systemErrors.cameraError)
     errorCode += "7";
-  if (systemErrors.serialError)
-    errorCode += "8";
   if (systemErrors.loraError)
-    errorCode += "9";
+    errorCode += "8";
   if (systemErrors.bmp390Error)
-    errorCode += "10";
+    errorCode += "9";
 
   return (errorCode.length() > 0) ? errorCode : "0";
 }
@@ -1531,17 +1735,6 @@ void checkGNSSStatus()
   // Check if GPS has valid data and is not too old
   systemErrors.gnssError = (!gps.location.isValid() || gps.location.age() > 10000 ||
                             primaryData.gnssSats < 4);
-}
-
-void checkSerialStatus()
-{
-  // Check if communication with Secondary ESP32 is working
-  static unsigned long lastValidData = 0;
-  if (secondaryData.dataValid)
-  {
-    lastValidData = millis();
-  }
-  systemErrors.serialError = (millis() - lastValidData > 10000); // No valid data for 10 seconds
 }
 
 void checkCameraStatus()
@@ -1620,23 +1813,58 @@ void setup()
     Serial.println("[WARN] BMP390 timeout - using BMP280");
   }
 
+  // ========== FLIGHT STATE RECOVERY CHECK (BEFORE CALIBRATION) ==========
+  // Check if this is a power reset during flight by reading last state from CSV
+  FlightState recoveredState = BOOT;
+  bool isRecovery = false;
+
+  if (sdCardOK)
+  {
+    recoveredState = readLastFlightStateFromCSV();
+    isRecovery = (recoveredState != BOOT && recoveredState != LAUNCH_PAD);
+  }
+
   // Calibrate BMP280 baseline if I2C is working
+  // ONLY calibrate if: (1) BOOT or LAUNCH_PAD state, OR (2) CSV doesn't exist
   if (i2cOK)
   {
-    if (!bmp390Ready)
+    if (!isRecovery) // Fresh boot, BOOT state, or LAUNCH_PAD state
     {
-      // BMP390 not available - use standard BMP280 calibration
-      calibrateBaselineBMP280();
-      usingBMP390 = false;
+      if (!bmp390Ready)
+      {
+        // BMP390 not available - use standard BMP280 calibration
+        calibrateBaselineBMP280();
+        usingBMP390 = false;
+      }
+      else
+      {
+        // BMP390 is available - calibrate BMP280 as backup to match BMP390
+        float currentBMP280Reading = bmp280.readAltitude(1013.25);
+        if (!isnan(currentBMP280Reading))
+        {
+          baselineAltitudeBMP280 = currentBMP280Reading - lastKnownAltitude;
+          bmp280Calibrated = true;
+        }
+      }
     }
     else
     {
-      // BMP390 is available - calibrate BMP280 as backup to match BMP390
+      // Recovery mode - set baseline from last known altitude WITHOUT recalibration
+      float lastAlt = readLastAltitudeFromCSV();
       float currentBMP280Reading = bmp280.readAltitude(1013.25);
-      if (!isnan(currentBMP280Reading))
+
+      if (!isnan(currentBMP280Reading) && lastAlt != 0.0)
       {
-        baselineAltitudeBMP280 = currentBMP280Reading - lastKnownAltitude;
+        baselineAltitudeBMP280 = currentBMP280Reading - lastAlt;
         bmp280Calibrated = true;
+        Serial.print("[RECOVER] BMP280 baseline set to last altitude: ");
+        Serial.print(lastAlt);
+        Serial.println(" m (no recalibration)");
+      }
+      else
+      {
+        Serial.println("[WARN] Recovery failed - using standard calibration");
+        calibrateBaselineBMP280();
       }
     }
   }
@@ -1660,37 +1888,51 @@ void setup()
   Serial.println(sensorsOK ? "OK" : "ERROR");
 
   // ========== FLIGHT STATE RECOVERY (POWER FAILURE HANDLING) ==========
-  // Check if this is a power reset during flight by reading last state from CSV
-  if (sdCardOK)
+  // Use the recovery state we already checked before calibration
+  if (isRecovery)
   {
-    FlightState recoveredState = readLastFlightStateFromCSV();
+    Serial.println("========================================");
+    Serial.println("[POWER RESET DETECTED]");
+    Serial.print("[RECOVER] Resuming from: ");
+    Serial.println(flightStateToString(recoveredState));
+    Serial.println("========================================");
 
-    // Only recover state if it's beyond BOOT (indicates we were in active flight)
-    if (recoveredState != BOOT)
+    currentState = recoveredState;
+    bootComplete = true;       // Skip boot state
+    sensorsInitialized = true; // Sensors already initialized
+
+    // Restore flight variables from CSV
+    readFlightVariablesFromCSV();
+
+    // Restore servo position based on recovered state
+    if (servoOpen || currentState >= ROCKET_DEPLOY)
     {
-      Serial.println("========================================");
-      Serial.println("[POWER RESET DETECTED]");
-      Serial.print("[RECOVER] Resuming from: ");
-      Serial.println(flightStateToString(recoveredState));
-      Serial.println("========================================");
-
-      currentState = recoveredState;
-      bootComplete = true;       // Skip boot state
-      sensorsInitialized = true; // Sensors already initialized
-
-      // Special handling for IMPACT state (already landed)
-      if (currentState == IMPACT)
-      {
-        recoveryBeepActive = true;
-      }
-
-      // Log the recovery event to CSV
-      String recoveryLog = TEAM_ID + ",";
-      recoveryLog += String(millis()) + ",";
-      recoveryLog += String(packetCount) + ",";
-      recoveryLog += "POWER_RESET,,,,,,,,,,,,,,,,,,,";
-      writeToSD(recoveryLog);
+      lidServo.write(0); // Ensure parachute is open
+      servoOpen = true;
+      Serial.println("[RECOVER] Parachute restored to OPEN position");
     }
+
+    // Special handling for IMPACT state (already landed)
+    if (currentState == IMPACT)
+    {
+      recoveryBeepActive = true;
+      Serial.println("[RECOVER] IMPACT state - activating recovery beeper");
+    }
+
+    // Set apogee flag if we're past ASCENT
+    if (currentState > ASCENT)
+    {
+      apogeeReached = true;
+    }
+
+    // Log the recovery event to CSV
+    String recoveryLog = TEAM_ID + ",";
+    recoveryLog += String(millis()) + ",";
+    recoveryLog += String(packetCount) + ",";
+    recoveryLog += "POWER_RESET_RECOVERY,";
+    recoveryLog += flightStateToString(recoveredState);
+    recoveryLog += ",,,,,,,,,,,,,,,,";
+    writeToSD(recoveryLog);
   }
 
   Serial.println("[READY] Mission control initialized\n");
@@ -1720,7 +1962,18 @@ void loop()
     readBMP280();
 
     // Calculate PID output from gyro data (for logging/telemetry only)
-    calculatePID();
+    // Only calculate after parachute deployment (servo open) and before impact
+    if (servoOpen && currentState != IMPACT)
+    {
+      calculatePID();
+    }
+    else if (currentState == IMPACT)
+    {
+      // Reset PID values after impact
+      pidOutput = 0.0;
+      pidOutputSmoothed = 0.0;
+      pidIntegral = 0.0;
+    }
 
     // Check system status
     checkSystemStatus();

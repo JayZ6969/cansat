@@ -23,6 +23,7 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BMP3XX.h>
 #include <LoRa.h>
+#include <ESP32Servo.h>
 
 // LoRa SX1278 Pin Definitions (SPI)
 #define LORA_SCK 18
@@ -47,6 +48,9 @@
 // Voltage Sensor Pin (moved from Primary GPIO36 to Secondary GPIO25)
 #define BATTERY_ADC_PIN 25
 
+// Reaction Wheel ESC Pin (BLDC motor control)
+#define ESC_PIN 27
+
 // Timing Constants - OPTIMIZED FOR MAXIMUM SPEED
 #define SENSOR_READ_INTERVAL 50   // Read sensors every 50ms (20Hz maximum speed)
 #define PRIMARY_DATA_TIMEOUT 2000 // Consider Primary lost after 2 seconds
@@ -59,14 +63,16 @@ const unsigned long LED_D13_BLINK_DURATION = 100; // 100ms blink duration
 // Global Objects
 Adafruit_BMP3XX bmp390;
 HardwareSerial primarySerial(2); // UART2 for primary communication
+Servo reactionWheelESC;          // ESC for reaction wheel BLDC motor
 
 // System State Variables
 bool sensorsInitialized = false;
 bool loraInitialized = false;
+bool escInitialized = false;
 unsigned long bootTime = 0;
 unsigned long lastSensorRead = 0;
 unsigned long lastPrimaryData = 0;
-unsigned long lastVoltageRead = 0; // Track last voltage reading time
+unsigned long lastPIDUpdate = 0; // Track last PID value received
 
 // Local Sensor Data
 float temperature = 0.0;
@@ -79,6 +85,18 @@ float pidOutput = 0.0; // Dummy PID output or implement actual control
 // Communication State
 bool primaryDataReceived = false;
 bool loraTransmissionFailed = false;
+
+// Reaction Wheel Control
+float currentPIDValue = 0.0;            // Current PID value from Primary
+float targetESCMicroseconds = 1500.0;   // Target ESC position (smoothed)
+float currentESCMicroseconds = 1500.0;  // Current ESC position (actual)
+bool reactionWheelActive = false;       // Wheel active after parachute deploy
+const unsigned long PID_TIMEOUT = 2000; // 2 second timeout for PID updates
+
+// Reaction Wheel Smoothing Parameters
+const float ESC_RAMP_RATE = 200.0; // Maximum change per second (microseconds/sec)
+const float ESC_DEADBAND = 10.0;   // Minimum PID value to activate wheel (reduces jitter)
+const float ESC_MIN_CHANGE = 5.0;  // Minimum change to apply (prevents micro-adjustments)
 
 // Error tracking for Secondary subsystems
 bool bmp390Error = false; // BMP390 sensor error
@@ -93,6 +111,8 @@ bool ledBlinkState = false;
 // Function Declarations
 void initializeSensors();
 void initializeLoRa();
+void initializeESC();
+void armESC();
 void readLocalSensors();
 void readBattery();
 void sendDataToPrimary();
@@ -102,6 +122,11 @@ void updateLEDs();
 void calibrateBaseline();
 void checkSecondaryErrors();
 String getErrorStatus();
+void controlReactionWheel(float pidValue);
+void stopReactionWheel();
+void checkPIDTimeout();
+float extractPIDFromCSV(String csvData);
+int extractFlightStateFromCSV(String csvData);
 
 void setup()
 {
@@ -110,6 +135,11 @@ void setup()
 
     // Initialize UART2 for Primary communication
     primarySerial.begin(115200, SERIAL_8N1, UART2_RX, UART2_TX);
+
+    // Configure ADC for battery voltage reading
+    analogReadResolution(12);        // 12-bit ADC (0-4095)
+    analogSetAttenuation(ADC_11db);  // 11dB attenuation (0-3.3V range)
+    pinMode(BATTERY_ADC_PIN, INPUT); // Set ADC pin as input
 
     // Initialize LED pins
     pinMode(LED_D2, OUTPUT);
@@ -121,7 +151,6 @@ void setup()
 
     bootTime = millis();
     lastPrimaryData = millis();
-    lastVoltageRead = millis(); // Initialize to allow immediate first read
 
     Serial.println("\n[SECONDARY] CanSat Communication Module");
     Serial.println("========================================");
@@ -129,6 +158,7 @@ void setup()
     // Initialize all systems
     initializeSensors();
     initializeLoRa();
+    initializeESC();
     calibrateBaseline();
 
     // Initialization complete - turn OFF D2
@@ -156,6 +186,9 @@ void loop()
     // Update LED status indicators
     updateLEDs();
 
+    // Check PID timeout and stop wheel if needed
+    checkPIDTimeout();
+
     // Periodic status output (every 5 seconds)
     static unsigned long lastStatusPrint = 0;
     if (millis() - lastStatusPrint >= 5000)
@@ -166,7 +199,11 @@ void loop()
         Serial.print(temperature, 1);
         Serial.print("C | VOLT:");
         Serial.print(voltage, 2);
-        Serial.print("V | LoRa:");
+        Serial.print("V | PID:");
+        Serial.print(currentPIDValue, 2);
+        Serial.print(" | Wheel:");
+        Serial.print(reactionWheelActive ? "ON" : "OFF");
+        Serial.print(" | LoRa:");
         Serial.print(loraError ? "ERR" : "OK");
         Serial.print(" | BMP390:");
         Serial.println(bmp390Error ? "ERR" : "OK");
@@ -228,6 +265,37 @@ void initializeLoRa()
         loraError = true;
         Serial.println(" FAILED");
     }
+}
+
+void initializeESC()
+{
+    Serial.print("[INIT] Reaction Wheel ESC...");
+
+    // Attach ESC to GPIO 27 with standard ESC range (1000-2000 microseconds)
+    reactionWheelESC.attach(ESC_PIN, 1000, 2000);
+
+    // Start with neutral position (stopped)
+    reactionWheelESC.writeMicroseconds(1500);
+    delay(1000);
+
+    escInitialized = true;
+    Serial.println(" OK");
+
+    // Arm ESC
+    armESC();
+}
+
+void armESC()
+{
+    Serial.print("[ESC] Arming sequence...");
+
+    // Standard ESC arming: Min throttle -> Neutral
+    reactionWheelESC.writeMicroseconds(1000); // Min throttle
+    delay(1000);
+    reactionWheelESC.writeMicroseconds(1500); // Neutral (stopped)
+    delay(1000);
+
+    Serial.println(" Armed");
 }
 
 void calibrateBaseline()
@@ -296,17 +364,13 @@ void readLocalSensors()
 
 void readBattery()
 {
-    // Only update voltage once per minute to reduce fluctuations
-    if (millis() - lastVoltageRead >= 60000) // 60 seconds
-    {
-        int adcValue = analogRead(BATTERY_ADC_PIN);
-        // Convert ADC to voltage for 18650 x 2 with voltage divider
-        // ADC reading * (3.3V / 4095) * calibrated_multiplier
-        // Calibrated multiplier: 5.33 (adjusted to match actual battery voltage)
-        voltage = (adcValue / 4095.0) * 3.3 * 5.33;
-        lastVoltageRead = millis();
-    }
-    // Else, keep the previous voltage value
+    // Read ADC value
+    int adcValue = analogRead(BATTERY_ADC_PIN);
+
+    // Calculate battery voltage
+    // ESP32 ADC: 12-bit (0-4095) with 11dB attenuation (0-3.3V range)
+    // Battery voltage = (ADC value / 4095) * 3.3V * multiplier
+    voltage = (adcValue / 4095.0) * 3.3 * 5.33;
 }
 
 void sendDataToPrimary()
@@ -345,6 +409,30 @@ void receiveFromPrimary()
             if (receivedData.startsWith("CSV:"))
             {
                 String csvData = receivedData.substring(4); // Remove "CSV:" prefix
+
+                // Extract flight state and PID value from CSV
+                int flightState = extractFlightStateFromCSV(csvData);
+                float pidValue = extractPIDFromCSV(csvData);
+
+                // Only control reaction wheel if not in IMPACT state (state 7)
+                if (flightState != 7) // 7 = IMPACT state
+                {
+                    if (pidValue != 0.0 || reactionWheelActive)
+                    {
+                        currentPIDValue = pidValue;
+                        lastPIDUpdate = millis();
+                        controlReactionWheel(pidValue);
+                    }
+                }
+                else
+                {
+                    // IMPACT state - stop reaction wheel
+                    if (reactionWheelActive)
+                    {
+                        stopReactionWheel();
+                        Serial.println("[IMPACT] Reaction wheel stopped");
+                    }
+                }
 
                 // Transmit the CSV data via LoRa
                 transmitViaLoRa(csvData);
@@ -541,4 +629,172 @@ String getErrorStatus()
     errorStatus += (loraError ? "1" : "0");
     errorStatus += (pidError ? "1" : "0");
     return errorStatus;
+}
+
+void controlReactionWheel(float pidValue)
+{
+    static unsigned long lastUpdateTime = 0;
+    unsigned long currentTime = millis();
+
+    if (!escInitialized)
+    {
+        return;
+    }
+
+    // Calculate time delta in seconds
+    float deltaTime = (currentTime - lastUpdateTime) / 1000.0;
+    if (lastUpdateTime == 0 || deltaTime < 0.001) // First run or too fast
+    {
+        lastUpdateTime = currentTime;
+        return;
+    }
+
+    // Apply deadband to prevent reactions to tiny PID values
+    if (abs(pidValue) < ESC_DEADBAND)
+    {
+        pidValue = 0.0;
+    }
+
+    // Activate reaction wheel if PID value is non-zero (parachute deployed)
+    if (pidValue != 0.0)
+    {
+        reactionWheelActive = true;
+    }
+
+    // PID range: -255 to +255
+    // ESC range: 1000-2000 microseconds (1500 = neutral/stopped)
+    //
+    // Control logic (REACTION WHEEL - OPPOSES ROTATION):
+    // - Negative PID = CanSat spinning clockwise → Wheel spins CCW (opposite) → Lower PWM (1000-1500)
+    // - Positive PID = CanSat spinning CCW → Wheel spins CW (opposite) → Higher PWM (1500-2000)
+    // - Zero PID = No rotation → Neutral (1500)
+
+    // Map PID output to ESC microseconds (correct mapping for opposing rotation)
+    // pidValue -255 -> 1000 µs (max CW - opposes CCW cansat spin)
+    // pidValue    0 -> 1500 µs (stopped)
+    // pidValue +255 -> 2000 µs (max CCW - opposes CW cansat spin)
+    targetESCMicroseconds = map((int)pidValue, -255, 255, 1000, 2000);
+
+    // Apply smooth ramping to prevent sudden movements
+    float maxChange = ESC_RAMP_RATE * deltaTime;
+    float change = targetESCMicroseconds - currentESCMicroseconds;
+
+    // Only apply change if it's significant enough (prevents micro-corrections)
+    if (abs(change) > ESC_MIN_CHANGE)
+    {
+        // Limit the rate of change
+        change = constrain(change, -maxChange, maxChange);
+        currentESCMicroseconds += change;
+    }
+
+    // Safety limits
+    currentESCMicroseconds = constrain(currentESCMicroseconds, 1000.0, 2000.0);
+
+    // Apply to ESC
+    reactionWheelESC.writeMicroseconds((int)currentESCMicroseconds);
+
+    lastUpdateTime = currentTime;
+}
+
+void stopReactionWheel()
+{
+    if (!escInitialized)
+    {
+        return;
+    }
+
+    // For IMPACT or timeout situations, perform immediate but controlled stop
+    // Set ESC to neutral position
+    currentESCMicroseconds = 1500.0;
+    targetESCMicroseconds = 1500.0;
+    reactionWheelESC.writeMicroseconds(1500);
+
+    // Clear all state variables
+    reactionWheelActive = false;
+    currentPIDValue = 0.0;
+}
+
+void checkPIDTimeout()
+{
+    // Stop reaction wheel if no PID update received for timeout period
+    if (reactionWheelActive && (millis() - lastPIDUpdate > PID_TIMEOUT))
+    {
+        stopReactionWheel();
+        pidError = true;
+        Serial.println("[WARN] PID timeout - wheel stopped");
+    }
+    else if (reactionWheelActive)
+    {
+        pidError = false; // Clear error if receiving updates
+    }
+}
+
+float extractPIDFromCSV(String csv)
+{
+    // CSV format: TEAM_ID,TIMESTAMP,PACKET_COUNT,ALTITUDE,PRESSURE,TEMP,VOLTAGE,
+    //             GNSS_TIME,GNSS_LAT,GNSS_LONG,GNSS_ALT,GNSS_SATS,
+    //             ACCEL_X,ACCEL_Y,ACCEL_Z,GYRO_X,GYRO_Y,GYRO_Z,
+    //             GYRO_SPIN_RATE(PID_OUTPUT),FLIGHT_STATE,SERVO_STATUS,ERROR_CODE,GNSS_SPEED
+    //
+    // PID_OUTPUT is in column 19 (index 18, after 18 commas)
+
+    int commaCount = 0;
+    int startIdx = 0;
+
+    for (int i = 0; i < csv.length(); i++)
+    {
+        if (csv.charAt(i) == ',')
+        {
+            commaCount++;
+            if (commaCount == 18)
+            {
+                // Found position after 18th comma - start of 19th column
+                startIdx = i + 1;
+            }
+            else if (commaCount == 19)
+            {
+                // Found position after 19th comma - end of 19th column
+                String pidStr = csv.substring(startIdx, i);
+                return pidStr.toFloat();
+            }
+        }
+    }
+
+    // If we didn't find the value (shouldn't happen with proper CSV)
+    return 0.0;
+}
+
+int extractFlightStateFromCSV(String csv)
+{
+    // CSV format: TEAM_ID,TIMESTAMP,PACKET_COUNT,ALTITUDE,PRESSURE,TEMP,VOLTAGE,
+    //             GNSS_TIME,GNSS_LAT,GNSS_LONG,GNSS_ALT,GNSS_SATS,
+    //             ACCEL_X,ACCEL_Y,ACCEL_Z,GYRO_X,GYRO_Y,GYRO_Z,
+    //             GYRO_SPIN_RATE(PID_OUTPUT),FLIGHT_STATE,SERVO_STATUS,ERROR_CODE,GNSS_SPEED
+    //
+    // FLIGHT_STATE is in column 20 (index 19, after 19 commas)
+
+    int commaCount = 0;
+    int startIdx = 0;
+
+    for (int i = 0; i < csv.length(); i++)
+    {
+        if (csv.charAt(i) == ',')
+        {
+            commaCount++;
+            if (commaCount == 19)
+            {
+                // Found position after 19th comma - start of 20th column (FLIGHT_STATE)
+                startIdx = i + 1;
+            }
+            else if (commaCount == 20)
+            {
+                // Found position after 20th comma - end of 20th column
+                String stateStr = csv.substring(startIdx, i);
+                return stateStr.toInt();
+            }
+        }
+    }
+
+    // If we didn't find the value, return 0 (BOOT state)
+    return 0;
 }
