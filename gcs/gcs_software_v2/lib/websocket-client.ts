@@ -19,6 +19,7 @@ export class WebSocketClient {
   private reconnectDelay = 3000
   private listeners: Map<WebSocketEventType, Set<(event: WebSocketEvent) => void>> = new Map()
   private isManuallyDisconnected = false
+  private filterTeamId = '2024-ASI-CANSAT-049'  // Only accept telemetry from this team
 
   constructor(url: string) {
     // Convert ws:// to http:// for Socket.IO
@@ -50,6 +51,12 @@ export class WebSocketClient {
 
         // Listen for telemetry data from backend
         this.socket.on("telemetry_data", (rawData: any) => {
+          // Check team ID filter (double-check on frontend)
+          if (rawData.team_id && rawData.team_id !== this.filterTeamId) {
+            console.log(`[GCS] 🚫 Filtered out packet from team: ${rawData.team_id}`)
+            return
+          }
+          
           const data = mapPythonToTelemetry(rawData)
           console.log("[GCS] ✅ Received telemetry:", data.altitude, data.batteryPercentage, data.rssi)
           this.notifyListeners("data", { type: "data", data })

@@ -12,7 +12,7 @@ import re
 from datetime import datetime
 
 class TelemetryHandler:
-    def __init__(self):
+    def __init__(self, filter_team_id='2024-ASI-CANSAT-049'):
         self.serial_connection = None
         self.is_connected = False
         self.port = None
@@ -23,6 +23,9 @@ class TelemetryHandler:
         self.latest_telemetry = None  # Separate storage for telemetry data
         self.buffer = ""
         self.log_messages = []  # Queue for storing log messages
+        
+        # Team ID filter - only process packets from this team
+        self.filter_team_id = filter_team_id
         
         # Telemetry data template (23 fields)
         self.telemetry_template = {
@@ -285,8 +288,16 @@ class TelemetryHandler:
             fields = csv_data.strip().split(',')
             
             if len(fields) >= 22:
+                # Extract team ID first to check filter
+                team_id = fields[0].strip()
+                
+                # Check if this packet matches our team ID filter
+                if self.filter_team_id and team_id != self.filter_team_id:
+                    print(f"[FILTER] Ignoring packet from team: {team_id} (expecting: {self.filter_team_id})")
+                    return None
+                
                 parsed_data = {
-                    'team_id': fields[0].strip(),
+                    'team_id': team_id,
                     'timestamp': fields[1].strip(),  # MISSION_TIME
                     'packet_count': int(fields[2]) if self._is_number(fields[2]) else 0,
                     'altitude': float(fields[3]) if self._is_float(fields[3]) else 0.0,

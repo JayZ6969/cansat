@@ -27,12 +27,13 @@ socketio = SocketIO(
     engineio_logger=False,
     ping_timeout=60,
     ping_interval=25,
-    transports=['polling', 'websocket'],
-    allow_upgrades=True
+    transports=['polling'],  # Polling only to avoid Werkzeug upgrade errors
+    allow_upgrades=False
 )
 
 # Global instances
-telemetry_handler = TelemetryHandler()
+# Filter for team ID: 2024-ASI-CANSAT-049
+telemetry_handler = TelemetryHandler(filter_team_id='2024-ASI-CANSAT-049')
 data_manager = DataManager()
 is_mission_active = False
 

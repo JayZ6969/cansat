@@ -18,6 +18,9 @@ class DataManager:
         self.csv_writer = None
         self.csv_recording = False
         self.ensure_data_directory()
+        
+        # Note: Team ID filtering is handled by TelemetryHandler
+        # Only data from team '2024-ASI-CANSAT-049' reaches this manager
     
     def ensure_data_directory(self):
         """Ensure data directory exists"""
