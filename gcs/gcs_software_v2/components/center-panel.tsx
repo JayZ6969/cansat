@@ -40,8 +40,8 @@ export function CenterPanel({ telemetry }: CenterPanelProps) {
         subtitle="Rotation Rates"
         data={gyroData}
         series={[
-          { key: "x", name: "Pitch", color: "var(--color-chart-1)" },
-          { key: "y", name: "Roll", color: "var(--color-chart-2)" },
+          { key: "x", name: "Roll", color: "var(--color-chart-1)" },
+          { key: "y", name: "Pitch", color: "var(--color-chart-2)" },
           { key: "z", name: "Yaw", color: "var(--color-chart-3)" },
         ]}
       />
