@@ -10,16 +10,15 @@ interface SystemDiagnosticsPanelProps {
 
 // Error code mapping
 const ERROR_CODE_MAP: { [key: string]: string } = {
-  '1': 'MPU6050 (Accel/Gyro)',
-  '2': 'BMP280 (Pressure)',
-  '3': 'SD Card',
-  '5': 'GNSS/GPS',
-  '6': 'PID Control',
-  '7': 'Camera',
-  '8': 'GPS Not Locked (Flight)',
-  '9': 'LoRa',
-  '10': 'BMP390 (Pressure)',
-  '58': 'GPS Not Locked (Ground)',
+  '1': 'MPU6050 Failure',
+  '2': 'BMP280 Failure',
+  '3': 'SD Card Failure',
+  '4': 'Unknown Failure',
+  '5': 'GNSS Failure',
+  '6': 'PID Failure',
+  '7': 'Camera Failure',
+  '8': 'LoRa Failure',
+  '9': 'BMP390 Failure',
 }
 
 export function SystemDiagnosticsPanel({ telemetry }: SystemDiagnosticsPanelProps) {
@@ -50,22 +49,14 @@ export function SystemDiagnosticsPanel({ telemetry }: SystemDiagnosticsPanelProp
     if (!errorStr || errorStr === '0') return []
     
     const codes: string[] = []
-    let remaining = errorStr
+    const seen = new Set<string>()
     
-    // Check for two-digit codes first (10, 58)
-    if (remaining.includes('58')) {
-      codes.push('58')
-      remaining = remaining.replace('58', '')
-    }
-    if (remaining.includes('10')) {
-      codes.push('10')
-      remaining = remaining.replace('10', '')
-    }
-    
-    // Then parse single-digit codes
-    for (const char of remaining) {
-      if (char !== '0') {
+    // Parse each digit as a separate error code
+    // Example: "59" means errors 5 and 9, "349" means errors 3, 4, and 9
+    for (const char of errorStr) {
+      if (char !== '0' && char >= '1' && char <= '9' && !seen.has(char)) {
         codes.push(char)
+        seen.add(char)
       }
     }
     
@@ -84,11 +75,11 @@ export function SystemDiagnosticsPanel({ telemetry }: SystemDiagnosticsPanelProp
     : errorCodesFromString.map(code => ({ code, message: ERROR_CODE_MAP[code] || 'Unknown error' }))
   
   // Check for sensor-specific errors
-  const hasSensorError = errorCodes.some(err => ['1', '2', '10'].includes(err.code))
+  const hasSensorError = errorCodes.some(err => ['1', '2', '9'].includes(err.code))
   
   // Build sensor status message
   const getSensorStatus = () => {
-    const sensorErrors = errorCodes.filter(err => ['1', '2', '10'].includes(err.code))
+    const sensorErrors = errorCodes.filter(err => ['1', '2', '9'].includes(err.code))
     if (sensorErrors.length === 0) return { status: 'ok', value: 'All nominal' }
     
     const errorNames = sensorErrors.map(err => err.message).join(', ')

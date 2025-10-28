@@ -140,22 +140,22 @@ export function MissionControlPanel({ onSettingsClick, telemetry }: MissionContr
         {/* Control Buttons */}
         <div className="flex gap-2 pt-2">
           <Button
-            className="flex-1"
+            className="flex-1 min-w-0"
             variant={isMissionActive ? "outline" : "default"}
             onClick={startMission}
             disabled={isMissionActive}
           >
-            <Play className="h-4 w-4 mr-2" />
-            Start Mission
+            <Play className="h-4 w-4 mr-1.5 shrink-0" />
+            <span className="truncate">Start Mission</span>
           </Button>
           <Button
-            className="flex-1"
+            className="flex-1 min-w-0"
             variant={isMissionActive ? "destructive" : "outline"}
             onClick={stopMission}
             disabled={!isMissionActive}
           >
-            <Square className="h-4 w-4 mr-2" />
-            Stop Mission
+            <Square className="h-4 w-4 mr-1.5 shrink-0" />
+            <span className="truncate">Stop Mission</span>
           </Button>
         </div>
 

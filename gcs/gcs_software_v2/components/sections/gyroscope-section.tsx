@@ -10,9 +10,9 @@ interface GyroscopeSectionProps {
 
 export function GyroscopeSection({ data }: GyroscopeSectionProps) {
   const series = [
-    { key: "x", name: "X-axis", color: "hsl(var(--chart-1))" },
-    { key: "y", name: "Y-axis", color: "hsl(var(--chart-2))" },
-    { key: "z", name: "Z-axis", color: "hsl(var(--chart-3))" },
+    { key: "x", name: "Pitch", color: "hsl(var(--chart-1))" },
+    { key: "y", name: "Roll", color: "hsl(var(--chart-2))" },
+    { key: "z", name: "Yaw", color: "hsl(var(--chart-3))" },
   ]
 
   return (
@@ -22,7 +22,7 @@ export function GyroscopeSection({ data }: GyroscopeSectionProps) {
           <Compass className="h-5 w-5" />
           Gyroscope
         </CardTitle>
-        <CardDescription>Angular velocity</CardDescription>
+        <CardDescription>Rotation Rates</CardDescription>
       </CardHeader>
       <CardContent className="flex-1 min-h-0">
         <MultiAxisChart
